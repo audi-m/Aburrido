@@ -15,7 +15,7 @@ Uses Claude AI to accurately answer application questions based on your profile.
 
 4. Click **"Load unpacked"** → select the `extension/` folder
 
-5. The AutoApply AI icon appears in your Chrome toolbar ✅
+5. The AutoApply AI icon appears in your Chrome toolbar  
 
 ---
 
