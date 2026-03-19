@@ -31,19 +31,21 @@
   function isVisible(el) {
     if (!el) return false;
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && getComputedStyle(el).display !== "none";
+    return r.width > 0 && r.height > 0
+      && getComputedStyle(el).display !== "none"
+      && el.offsetParent !== null;
   }
 
   function waitForElement(selector, timeout = 5000) {
     return new Promise(resolve => {
-      const found = document.querySelector(selector);
-      if (found) return resolve(found);
-      const obs = new MutationObserver(() => {
+      const start = Date.now();
+      const check = () => {
         const el = document.querySelector(selector);
-        if (el) { obs.disconnect(); resolve(el); }
-      });
-      obs.observe(document.body, { childList: true, subtree: true });
-      setTimeout(() => { obs.disconnect(); resolve(null); }, timeout);
+        if (el) return resolve(el);
+        if (Date.now() - start >= timeout) return resolve(null);
+        setTimeout(check, 300);
+      };
+      check();
     });
   }
 
@@ -239,11 +241,20 @@
     await AI.delay(400, 700);
 
     AI.log(PLATFORM, `Easy Apply: clicking <${btn.tagName}>`);
-    btn.click();
-    await AI.delay(400, 700);
-    await waitForElement(
-          "[role='dialog'], .jobs-easy-apply-modal, [class*='easy-apply-modal'], .artdeco-modal", 5000
-        );
+    btn.focus();
+    btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+    btn.dispatchEvent(new PointerEvent("pointerup",   { bubbles: true, cancelable: true }));
+    btn.dispatchEvent(new MouseEvent("click",         { bubbles: true, cancelable: true }));
+    await AI.delay(1500, 2500);
+
+    // Wait for actual form content, not just modal container
+    const formReady = await waitForCondition(
+      () => document.querySelector("form input, form select, form textarea"),
+      8000
+    );
+    if (!formReady) { AI.log(PLATFORM, "Form never rendered after Easy Apply click", "warn"); return null; }
+
+    // Find the Next/Submit button inside the modal
     const findModalBtn = () => [...document.querySelectorAll("button")].find(b =>
       /continue to next step/i.test(b.getAttribute("aria-label") || "") ||
       /\bnext\b/i.test(b.innerText)
@@ -257,7 +268,7 @@
       }, 200);
       setTimeout(() => { clearInterval(timer); resolve(null); }, 5000);
     });
-    if (findModalBtn) { AI.log(PLATFORM, "Modal opened"); return findModalBtn; }
+    if (nextBtn) { AI.log(PLATFORM, "Modal opened"); return nextBtn; }
     AI.log(PLATFORM, "No modal after button click", "warn");
     return null;
   }
@@ -497,7 +508,9 @@
         }
 
         trackAnswer(question, options.find(o => o.value === chosen)?.text || chosen, "select");
-        el.value = chosen;
+        const nativeSelectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+        if (nativeSelectSetter) nativeSelectSetter.call(el, chosen); else el.value = chosen;
+        el.dispatchEvent(new Event("input",  { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
         await AI.delay(300, 500);
 
