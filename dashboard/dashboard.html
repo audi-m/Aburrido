@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>AutoApply AI — Dashboard</title>
+<title>Aburrido AI — Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -110,12 +110,17 @@
   .table-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .table-title { font-size: 14px; font-weight: 600; }
   .filter-row { display: flex; gap: 6px; }
-  .filter-btn {
+  .filter-btn, .qa-filter-btn, .skills-filter-btn {
     padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 500;
     border: 1px solid var(--border); background: var(--surface2); color: var(--muted);
     cursor: pointer; transition: all 0.15s;
   }
-  .filter-btn.active { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+  .filter-btn:hover, .qa-filter-btn:hover, .skills-filter-btn:hover {
+    border-color: var(--muted); color: var(--text);
+  }
+  .filter-btn.active, .qa-filter-btn.active, .skills-filter-btn.active {
+    border-color: var(--green); color: var(--green); background: var(--green-dim);
+  }
 
   table { width: 100%; border-collapse: collapse; }
   thead th {
@@ -155,6 +160,226 @@
   }
   .page-btn.active { border-color: var(--green); color: var(--green); background: var(--green-dim); }
   .page-btn:hover:not(.active) { border-color: var(--text); color: var(--text); }
+
+  /* Q&A tab */
+  .qa-pending-row { background: rgba(255,209,102,0.04); }
+  .qa-pending-row:hover { background: rgba(255,209,102,0.08); }
+
+  .qa-answer-cell { position: relative; }
+  .qa-input {
+    width: 100%; background: var(--surface2);
+    border: 1px solid var(--border); color: var(--text);
+    padding: 7px 9px; border-radius: 6px; font-size: 12px; font-family: inherit;
+    resize: none; overflow: hidden; min-height: 36px; line-height: 1.5;
+    transition: border-color 0.15s;
+  }
+  .qa-input:focus { outline: none; border-color: var(--green); }
+  .qa-input.pending {
+    border-color: var(--yellow);
+    background: rgba(255,209,102,0.06);
+  }
+  .qa-input.pending:focus { border-color: var(--yellow); box-shadow: 0 0 0 2px rgba(255,209,102,0.15); }
+  .qa-input::placeholder { color: var(--muted); font-style: italic; }
+
+  .qa-save-badge {
+    position: absolute; right: 6px; bottom: 6px;
+    background: var(--green); color: #000;
+    font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+    opacity: 0; transition: opacity 0.2s; pointer-events: none;
+  }
+  .qa-save-badge.show { opacity: 1; }
+
+  .qa-pending-hint {
+    font-size: 10px; color: var(--yellow); font-weight: 600;
+    letter-spacing: 0.3px; margin-top: 4px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .qa-pending-hint::before { content: "●"; font-size: 7px; }
+
+  .qa-answered-hint {
+    font-size: 10px; color: var(--muted); margin-top: 3px;
+  }
+
+  .qa-context { font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .qa-context strong { color: var(--text); font-weight: 500; }
+
+  .qa-type-badge {
+    font-family: var(--mono); font-size: 10px; padding: 2px 7px;
+    border-radius: 4px; display: inline-block; margin-bottom: 4px;
+  }
+
+  /* Score badge */
+  .score-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 42px; height: 24px; border-radius: 12px; padding: 0 6px;
+    font-family: var(--mono); font-size: 12px; font-weight: 700;
+  }
+  .score-high { background: rgba(0,229,160,0.15); color: var(--green); }
+  .score-mid  { background: rgba(255,209,102,0.15); color: var(--yellow); }
+  .score-low  { background: rgba(255,92,92,0.15);  color: var(--red); }
+  .score-na   { background: var(--surface2); color: var(--muted); }
+
+  /* Job link */
+  .job-link { color: inherit; text-decoration: none; }
+  .job-link:hover { color: var(--green); text-decoration: underline; }
+
+  /* Missing skills pill */
+  .skills-pill {
+    display: inline-block; border-radius: 10px;
+    padding: 2px 8px; font-size: 10px; font-weight: 600;
+    cursor: pointer; transition: background 0.15s; white-space: nowrap;
+    background: rgba(255,92,92,0.12); color: var(--red);
+  }
+  .skills-pill:hover { background: rgba(255,92,92,0.22); }
+  .skills-pill.few { background: rgba(255,209,102,0.12); color: var(--yellow); }
+  .skills-pill.few:hover { background: rgba(255,209,102,0.22); }
+
+  /* Skills popover */
+  .skills-popover {
+    position: fixed; z-index: 9999;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    min-width: 180px; max-width: 260px;
+    display: none;
+  }
+  .skills-popover.show { display: block; }
+  .skills-popover-title {
+    font-size: 10px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 8px; font-weight: 600;
+  }
+  .skills-popover-item { color: var(--yellow); font-size: 12px; margin: 4px 0; line-height: 1.4; }
+
+  /* Skills gap */
+  .skills-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px; margin-top: 16px;
+  }
+  .skill-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; transition: border-color 0.15s;
+  }
+  .skill-card:hover { border-color: var(--muted); }
+  .skill-card.added { border-color: var(--green); background: var(--green-dim); }
+  .skill-name {
+    font-size: 14px; font-weight: 600; color: var(--text);
+    margin-bottom: 4px; letter-spacing: -0.3px;
+  }
+  .skill-count { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  .skill-jobs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; min-height: 20px; }
+  .skill-job-chip {
+    font-size: 9px; background: var(--border); color: var(--muted);
+    border-radius: 4px; padding: 2px 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px;
+  }
+  .skill-actions { display: flex; flex-direction: column; gap: 5px; }
+  .btn-add-skill {
+    background: var(--green); color: #000; border: none;
+    padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 700;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-add-skill:hover { opacity: 0.85; }
+  .btn-add-skill:disabled { background: var(--border); color: var(--muted); cursor: default; opacity: 1; }
+  .btn-know-skill {
+    background: transparent; color: var(--muted); border: 1px solid var(--border);
+    padding: 5px 10px; border-radius: 6px; font-size: 11px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .btn-know-skill:hover { border-color: var(--text); color: var(--text); }
+  .skills-empty { text-align: center; padding: 48px; color: var(--muted); }
+  .skills-empty h3 { font-size: 16px; margin-bottom: 6px; color: var(--text); }
+
+  /* Top bar */
+  .topbar {
+    display: flex; align-items: center; justify-content: flex-end;
+    margin: -12px -12px 20px -12px; padding: 0 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-user {
+    display: flex; align-items: center; gap: 8px;
+    cursor: pointer; padding: 6px 10px; border-radius: 8px;
+    transition: background 0.15s;
+  }
+  .topbar-user:hover { background: var(--surface2); }
+  .topbar-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--green); color: #000;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px; font-family: var(--mono);
+    overflow: hidden; flex-shrink: 0;
+  }
+  .topbar-avatar img {
+    width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+  }
+  .topbar-name {
+    font-size: 13px; font-weight: 500; color: var(--text);
+    max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .topbar-user-active {
+    background: var(--green-dim); border-radius: 8px;
+  }
+  .topbar-user-active .topbar-avatar { box-shadow: 0 0 0 2px var(--green); }
+  .topbar-user-active .topbar-name { color: var(--green); }
+
+  /* Profile page */
+  .profile-grid { display: flex; flex-direction: column; gap: 16px; }
+  .profile-section .card-title { margin-bottom: 14px; }
+  .profile-field-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .profile-field { display: flex; flex-direction: column; gap: 4px; }
+  .profile-label {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .profile-input {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 10px; border-radius: 6px;
+    font-size: 13px; font-family: inherit;
+    transition: border-color 0.15s;
+  }
+  .profile-input:focus { outline: none; border-color: var(--green); }
+  .profile-input::placeholder { color: var(--muted); }
+  .profile-textarea {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 10px; border-radius: 6px;
+    font-size: 13px; font-family: inherit; resize: vertical;
+    line-height: 1.5; min-height: 80px;
+    transition: border-color 0.15s;
+  }
+  .profile-textarea:focus { outline: none; border-color: var(--green); }
+  .profile-textarea::placeholder { color: var(--muted); }
+  .profile-skills-list {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; min-height: 30px;
+  }
+  .profile-skill-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,229,160,0.2);
+    border-radius: 6px; padding: 4px 8px; font-size: 12px; font-weight: 500;
+  }
+  .profile-skill-remove {
+    cursor: pointer; opacity: 0.6; font-size: 14px; line-height: 1;
+    transition: opacity 0.15s;
+  }
+  .profile-skill-remove:hover { opacity: 1; }
+  .profile-skill-add {
+    display: flex; gap: 8px; align-items: center;
+  }
+  .profile-education-list { display: flex; flex-direction: column; gap: 8px; }
+  .profile-edu-item {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 12px; font-size: 12px;
+  }
+  .profile-edu-item strong { color: var(--text); }
+  .profile-edu-item span { color: var(--muted); }
+  .profile-tags-list {
+    display: flex; flex-wrap: wrap; gap: 6px; min-height: 24px;
+  }
+  .profile-tag {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 10px; font-size: 12px; color: var(--text);
+  }
 </style>
 </head>
 <body>
@@ -165,7 +390,7 @@
     <div class="sidebar-logo">
       <div class="logo-mark">AA</div>
       <div class="logo-text">
-        <h1>AutoApply AI</h1>
+        <h1>Aburrido AI</h1>
         <p>Job Agent</p>
       </div>
     </div>
@@ -177,6 +402,15 @@
       <div class="nav-item" id="navHistory">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         Applications
+      </div>
+      <div class="nav-item" id="navQA">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Saved Q&amp;A
+        <span id="qaBadge" style="display:none;margin-left:auto;background:var(--yellow);color:#000;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700"></span>
+      </div>
+      <div class="nav-item" id="navSkills">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        Skills Gap
       </div>
     </nav>
     <div class="sidebar-stats">
@@ -193,6 +427,19 @@
 
   <!-- Main -->
   <main class="main">
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="topbar-left"></div>
+      <div class="topbar-right">
+        <div class="topbar-user" id="topbarUser" title="View profile">
+          <div class="topbar-avatar" id="topbarAvatar">?</div>
+          <span class="topbar-name" id="topbarName">Not signed in</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;opacity:0.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <div id="dashboardPanel">
     <div class="page-header">
       <h2>Application Dashboard</h2>
       <p id="dateLabel">Loading...</p>
@@ -251,6 +498,8 @@
             <th>Location</th>
             <th>Platform</th>
             <th>Status</th>
+            <th>Match %</th>
+            <th>Skills Gap</th>
             <th>Date</th>
           </tr>
         </thead>
@@ -262,147 +511,199 @@
       </div>
       <div class="pagination" id="pagination"></div>
     </div>
+    </div><!-- /dashboardPanel -->
+
+    <!-- Q&A Panel -->
+    <div id="qaPanel" style="display:none">
+      <div class="page-header">
+        <h2>Saved Q&amp;A</h2>
+        <p>All questions the agent has encountered. <span style="color:var(--yellow)">Yellow rows</span> need your answer.</p>
+      </div>
+      <div id="qaStatusBanner" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px"></div>
+      <div class="card">
+        <div class="table-header">
+          <div class="table-title">Questions &amp; Answers</div>
+          <div class="filter-row">
+            <button class="qa-filter-btn active" data-qa-filter="all">All</button>
+            <button class="qa-filter-btn" data-qa-filter="pending">Needs Review</button>
+            <button class="qa-filter-btn" data-qa-filter="answered">Answered</button>
+          </div>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);border-bottom:1px solid var(--border);width:35%">Question</th>
+              <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);border-bottom:1px solid var(--border);width:30%">Answer</th>
+              <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);border-bottom:1px solid var(--border)">Application</th>
+              <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);border-bottom:1px solid var(--border)">Type</th>
+            </tr>
+          </thead>
+          <tbody id="qaTableBody"></tbody>
+        </table>
+        <div id="qaEmpty" class="empty-table" style="display:none">
+          <h3>No saved questions yet</h3>
+          <p>Questions appear here as the agent fills out applications</p>
+        </div>
+      </div>
+    </div><!-- /qaPanel -->
+
+    <!-- Skills Gap Panel -->
+    <div id="skillsPanel" style="display:none">
+      <div class="page-header">
+        <h2>Skills Gap</h2>
+        <p>Key skills that appeared in jobs you applied to but aren't in your profile. Click "Add to profile" to include them.</p>
+      </div>
+      <div id="skillsStatusBanner" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px"></div>
+      <div class="card">
+        <div class="table-header">
+          <div class="table-title">Missing Skills</div>
+          <div class="filter-row">
+            <select id="skillsJobFilter" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;margin-right:8px;max-width:200px">
+              <option value="all">All Job Titles</option>
+            </select>
+            <button class="skills-filter-btn active" data-skills-filter="gap">Missing</button>
+            <button class="skills-filter-btn" data-skills-filter="added">Added to Profile</button>
+          </div>
+        </div>
+        <div id="skillsGrid" class="skills-grid"></div>
+        <div id="skillsEmpty" class="skills-empty" style="display:none">
+          <h3>No skills gap found</h3>
+          <p>Apply to more jobs or make sure job descriptions are being captured</p>
+        </div>
+      </div>
+    </div><!-- /skillsPanel -->
+
+    <!-- Profile Panel -->
+    <div id="profilePanel" style="display:none">
+      <div class="page-header">
+        <h2>My Profile</h2>
+        <p>View and edit your profile information. Changes are saved to the database.</p>
+      </div>
+      <div id="profileStatusBanner" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px"></div>
+
+      <div class="profile-grid">
+        <!-- Basic Info -->
+        <div class="card profile-section">
+          <div class="card-title">Basic Information</div>
+          <div class="profile-field-grid">
+            <div class="profile-field">
+              <label class="profile-label">Full Name</label>
+              <input type="text" class="profile-input" id="profName" placeholder="Your name">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Email</label>
+              <input type="email" class="profile-input" id="profEmail" placeholder="email@example.com">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Phone</label>
+              <input type="text" class="profile-input" id="profPhone" placeholder="+1 (555) 000-0000">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Location</label>
+              <input type="text" class="profile-input" id="profLocation" placeholder="City, State">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Current Title</label>
+              <input type="text" class="profile-input" id="profTitle" placeholder="Software Engineer">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Current Company</label>
+              <input type="text" class="profile-input" id="profCompany" placeholder="Company Inc.">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Total Years Experience</label>
+              <input type="number" class="profile-input" id="profYears" placeholder="0" min="0">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Notice Period</label>
+              <input type="text" class="profile-input" id="profNotice" placeholder="2 weeks">
+            </div>
+          </div>
+        </div>
+
+        <!-- Links -->
+        <div class="card profile-section">
+          <div class="card-title">Links</div>
+          <div class="profile-field-grid">
+            <div class="profile-field">
+              <label class="profile-label">LinkedIn URL</label>
+              <input type="url" class="profile-input" id="profLinkedin" placeholder="https://linkedin.com/in/...">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">GitHub URL</label>
+              <input type="url" class="profile-input" id="profGithub" placeholder="https://github.com/...">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Portfolio URL</label>
+              <input type="url" class="profile-input" id="profPortfolio" placeholder="https://...">
+            </div>
+          </div>
+        </div>
+
+        <!-- Summary -->
+        <div class="card profile-section">
+          <div class="card-title">Professional Summary</div>
+          <textarea class="profile-textarea" id="profSummary" rows="4" placeholder="Brief professional summary..."></textarea>
+        </div>
+
+        <!-- EEO / Demographics -->
+        <div class="card profile-section">
+          <div class="card-title">Demographics <span style="font-size:11px;color:var(--muted);font-weight:400">(used for EEO form fields)</span></div>
+          <div class="profile-field-grid">
+            <div class="profile-field">
+              <label class="profile-label">Gender</label>
+              <input type="text" class="profile-input" id="profGender" placeholder="e.g. Male, Female, Non-binary">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Race / Ethnicity</label>
+              <input type="text" class="profile-input" id="profRace" placeholder="e.g. White, Asian, Hispanic">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Military / Veteran Status</label>
+              <input type="text" class="profile-input" id="profMilitary" placeholder="e.g. Not a veteran">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Disability Status</label>
+              <input type="text" class="profile-input" id="profDisability" placeholder="e.g. No disability">
+            </div>
+            <div class="profile-field">
+              <label class="profile-label">Nationality</label>
+              <input type="text" class="profile-input" id="profNationality" placeholder="e.g. US Citizen">
+            </div>
+          </div>
+        </div>
+
+        <!-- Skills -->
+        <div class="card profile-section">
+          <div class="card-title">Skills</div>
+          <div id="profSkillsList" class="profile-skills-list"></div>
+          <div class="profile-skill-add">
+            <input type="text" class="profile-input" id="profSkillInput" placeholder="Add a skill..." style="flex:1">
+            <button class="btn-add-skill" id="profSkillAddBtn" style="white-space:nowrap">+ Add</button>
+          </div>
+        </div>
+
+        <!-- Education -->
+        <div class="card profile-section">
+          <div class="card-title">Education</div>
+          <div id="profEducationList" class="profile-education-list"></div>
+        </div>
+
+        <!-- Languages -->
+        <div class="card profile-section">
+          <div class="card-title">Languages</div>
+          <div id="profLanguagesList" class="profile-tags-list"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:20px;display:flex;gap:10px">
+        <button class="btn-add-skill" id="profSaveBtn" style="padding:10px 24px;font-size:13px">Save Profile</button>
+        <span id="profSavedBadge" style="display:none;color:var(--green);font-size:12px;align-self:center;font-weight:600">Saved</span>
+      </div>
+    </div><!-- /profilePanel -->
   </main>
 </div>
 
-<script>
-  let allApps = [];
-  let currentFilter = "all";
-  let currentPage = 1;
-  const PER_PAGE = 20;
-
-  async function init() {
-    document.getElementById("dateLabel").textContent = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-
-    const stats = await getStats();
-    renderStats(stats);
-    renderBarChart(stats.recentApps || []);
-    renderPlatformSplit(stats);
-
-    allApps = stats.recentApps || [];
-    renderTable();
-
-    // Auto-refresh every 10s
-    setInterval(async () => {
-      const s = await getStats();
-      renderStats(s);
-      allApps = s.recentApps || [];
-      renderTable();
-    }, 10_000);
-  }
-
-  function getStats() {
-    return new Promise(resolve => chrome.runtime.sendMessage({ type: "GET_STATS" }, resolve));
-  }
-
-  function renderStats(stats) {
-    document.getElementById("sideToday").textContent = stats.today || 0;
-    document.getElementById("sideTotal").textContent = stats.total || 0;
-    document.getElementById("cardToday").textContent = stats.today || 0;
-    document.getElementById("cardTotal").textContent = stats.total || 0;
-    document.getElementById("cardLinkedIn").textContent = stats.linkedin || 0;
-    document.getElementById("cardIndeed").textContent = stats.indeed || 0;
-  }
-
-  function renderBarChart(apps) {
-    const chart = document.getElementById("barChart");
-    const days = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const label = d.toLocaleDateString("en-US", { weekday: "short" });
-      const dateStr = d.toDateString();
-      const count = apps.filter(a => new Date(a.appliedAt).toDateString() === dateStr).length;
-      days.push({ label, count });
-    }
-    const max = Math.max(...days.map(d => d.count), 1);
-    chart.innerHTML = days.map(d => `
-      <div class="bar-day">
-        <div class="bar-fill" style="height:${Math.max(4, (d.count / max) * 70)}px" title="${d.count} applications"></div>
-        <div class="bar-label">${d.label}</div>
-      </div>
-    `).join("");
-  }
-
-  function renderPlatformSplit(stats) {
-    const total = stats.total || 1;
-    document.getElementById("platformSplit").innerHTML = `
-      <div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Application sources</div>
-        <div class="plat-row">
-          <div class="plat-name">LinkedIn</div>
-          <div class="plat-bar-bg"><div class="plat-bar-fill linkedin" style="width:${(stats.linkedin/total*100).toFixed(0)}%"></div></div>
-          <div class="plat-count">${stats.linkedin || 0}</div>
-        </div>
-        <div class="plat-row" style="margin-top:8px">
-          <div class="plat-name">Indeed</div>
-          <div class="plat-bar-bg"><div class="plat-bar-fill indeed" style="width:${(stats.indeed/total*100).toFixed(0)}%"></div></div>
-          <div class="plat-count">${stats.indeed || 0}</div>
-        </div>
-      </div>
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Success rate</div>
-        <div style="font-family:var(--mono);font-size:24px;font-weight:700;color:var(--green)">
-          ${total > 0 ? Math.round(allApps.filter(a=>a.status==="applied").length / total * 100) : 0}%
-        </div>
-      </div>
-    `;
-  }
-
-  function renderTable() {
-    const filtered = currentFilter === "all"
-      ? allApps
-      : allApps.filter(a =>
-          a.platform === currentFilter ||
-          a.status === currentFilter
-        );
-
-    const totalPages = Math.ceil(filtered.length / PER_PAGE);
-    const page = filtered.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE);
-    const tbody = document.getElementById("appTableBody");
-    const empty = document.getElementById("emptyState");
-
-    if (!filtered.length) {
-      tbody.innerHTML = "";
-      empty.style.display = "block";
-    } else {
-      empty.style.display = "none";
-      tbody.innerHTML = page.map(app => {
-        const date = new Date(app.appliedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-        return `<tr>
-          <td class="td-title">${app.jobTitle || "Unknown"}</td>
-          <td class="td-company">${app.company || "–"}</td>
-          <td style="color:var(--muted);font-size:11px">${app.location || "–"}</td>
-          <td><span class="td-platform ${app.platform}">${app.platform?.toUpperCase()}</span></td>
-          <td class="td-status ${app.status}">${app.status}</td>
-          <td class="td-time">${date}</td>
-        </tr>`;
-      }).join("");
-    }
-
-    // Pagination
-    const pag = document.getElementById("pagination");
-    if (totalPages <= 1) { pag.innerHTML = ""; return; }
-    pag.innerHTML = Array.from({ length: totalPages }, (_, i) =>
-      `<button class="page-btn ${i + 1 === currentPage ? "active" : ""}" data-p="${i+1}">${i+1}</button>`
-    ).join("");
-    pag.querySelectorAll(".page-btn").forEach(btn => {
-      btn.addEventListener("click", () => { currentPage = parseInt(btn.dataset.p); renderTable(); });
-    });
-  }
-
-  // Filter buttons
-  document.querySelectorAll(".filter-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      currentFilter = btn.dataset.filter;
-      currentPage = 1;
-      renderTable();
-    });
-  });
-
-  init();
-</script>
+<script src="dashboard.js"></script>
 </body>
 </html>

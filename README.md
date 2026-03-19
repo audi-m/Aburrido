@@ -1,8 +1,9 @@
-# AutoApply AI — Chrome Extension
+# Aburrido AI — Chrome Extension
 
 AI-powered job application agent for LinkedIn Easy Apply and Indeed Quick Apply.
 Uses Claude AI to accurately answer application questions based on your profile.
 
+Technologies: Javascript, Supabase
 ---
 
 ## 🚀 Installation (2 minutes)
@@ -15,7 +16,7 @@ Uses Claude AI to accurately answer application questions based on your profile.
 
 4. Click **"Load unpacked"** → select the `extension/` folder
 
-5. The AutoApply AI icon appears in your Chrome toolbar  
+5. The Aburrido AI icon appears in your Chrome toolbar  
 
 ---
 
@@ -27,7 +28,7 @@ Uses Claude AI to accurately answer application questions based on your profile.
 - Copy the key (starts with `sk-ant-api03-...`)
 
 ### 2. Configure the extension
-- Click the AutoApply AI icon in Chrome toolbar
+- Click the Aburrido AI icon in Chrome toolbar
 - Paste your API key → click **Save**
 - Set your **daily limit** (recommended: 30-40)
 - Set your **minimum salary** (e.g. 120000)
@@ -39,13 +40,13 @@ Uses Claude AI to accurately answer application questions based on your profile.
 ### LinkedIn Easy Apply
 1. Go to [linkedin.com/jobs](https://linkedin.com/jobs)
 2. Search for your job title (e.g. "Solutions Architect")
-3. Click the AutoApply AI icon → **Start Autopilot**
+3. Click the Aburrido AI icon → **Start Autopilot**
 4. Watch it apply automatically!
 
 ### Indeed Quick Apply
 1. Go to [indeed.com/jobs](https://indeed.com/jobs)
 2. Search for your job title
-3. Click the AutoApply AI icon → **Start Autopilot**
+3. Click the Aburrido AI icon → **Start Autopilot**
 
 ### Dashboard
 Click the grid icon in the popup to open the full dashboard with:

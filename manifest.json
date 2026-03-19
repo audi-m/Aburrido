@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "AutoApply AI",
+  "name": "Aburrido AI",
   "version": "1.0.0",
   "description": "AI-powered job application agent for LinkedIn and Indeed",
   "permissions": [
@@ -8,15 +8,18 @@
     "activeTab",
     "scripting",
     "tabs",
-    "alarms"
+    "alarms",
+    "identity"
   ],
   "host_permissions": [
     "https://www.linkedin.com/*",
     "https://www.indeed.com/*",
-    "https://api.anthropic.com/*"
+    "https://api.anthropic.com/*",
+    "https://ceuymsrfthlcieapftsv.supabase.co/*"
   ],
   "background": {
-    "service_worker": "background/service_worker.js"
+    "service_worker": "background/service_worker.js",
+    "type": "module"
   },
   "content_scripts": [
     {
@@ -45,7 +48,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["dashboard/dashboard.html"],
+      "resources": ["dashboard/dashboard.html", "dashboard/dashboard.js"],
       "matches": ["<all_urls>"]
     }
   ]
