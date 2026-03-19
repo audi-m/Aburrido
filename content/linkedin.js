@@ -31,9 +31,29 @@
   function isVisible(el) {
     if (!el) return false;
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0
-      && getComputedStyle(el).display !== "none"
-      && el.offsetParent !== null;
+    return r.width > 0 && r.height > 0 && getComputedStyle(el).display !== "none";
+  }
+
+  // LinkedIn renders the Easy Apply modal inside a Shadow DOM.
+  // The shadow host is div#interop-outlet. All modal queries must go through here.
+  function getShadowRoot() {
+    const host = document.querySelector("#interop-outlet");
+    return host?.shadowRoot || null;
+  }
+
+  // Query inside shadow root first, fall back to document
+  function shadowQuery(selector) {
+    const sr = getShadowRoot();
+    return (sr && sr.querySelector(selector)) || document.querySelector(selector);
+  }
+
+  function shadowQueryAll(selector) {
+    const sr = getShadowRoot();
+    if (sr) {
+      const results = [...sr.querySelectorAll(selector)];
+      if (results.length) return results;
+    }
+    return [...document.querySelectorAll(selector)];
   }
 
   function waitForElement(selector, timeout = 5000) {
@@ -51,9 +71,12 @@
 
   function waitForCondition(predicate, timeout = 6000) {
     return new Promise(resolve => {
-      if (predicate()) return resolve(true);
+      const check = () => { const v = predicate(); if (v) return v; };
+      const found = check();
+      if (found) return resolve(found);
       const iv = setInterval(() => {
-        if (predicate()) { clearInterval(iv); clearTimeout(t); resolve(true); }
+        const v = predicate();
+        if (v) { clearInterval(iv); clearTimeout(t); resolve(v); }
       }, 250);
       const t = setTimeout(() => { clearInterval(iv); resolve(false); }, timeout);
     });
@@ -240,24 +263,29 @@
     btn.scrollIntoView({ behavior: "smooth", block: "center" });
     await AI.delay(400, 700);
 
+    const isLink = btn.tagName === "A";
     AI.log(PLATFORM, `Easy Apply: clicking <${btn.tagName}>`);
-    btn.focus();
+
+    btn.scrollIntoView({ behavior: "smooth", block: "center" });
+    await AI.delay(600, 1200);
     btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
     btn.dispatchEvent(new PointerEvent("pointerup",   { bubbles: true, cancelable: true }));
     btn.dispatchEvent(new MouseEvent("click",         { bubbles: true, cancelable: true }));
-    await AI.delay(1500, 2500);
 
-    // Wait for actual form content, not just modal container
+    
+    // <button> → wait for modal form content inside shadow DOM
+    await AI.delay(1500, 2500);
     const formReady = await waitForCondition(
-      () => document.querySelector("form input, form select, form textarea"),
-      8000
+      () => shadowQuery("input, textarea, select") && shadowQuery("button"),
+      10000
     );
+    AI.log(PLATFORM, `URL after click: ${location.href}`);
     if (!formReady) { AI.log(PLATFORM, "Form never rendered after Easy Apply click", "warn"); return null; }
 
-    // Find the Next/Submit button inside the modal
-    const findModalBtn = () => [...document.querySelectorAll("button")].find(b =>
+    const findModalBtn = () => shadowQueryAll("button").find(b =>
       /continue to next step/i.test(b.getAttribute("aria-label") || "") ||
-      /\bnext\b/i.test(b.innerText)
+      /submit application/i.test(b.getAttribute("aria-label") || "") ||
+      /review your application/i.test(b.getAttribute("aria-label") || "")
     );
     const nextBtn = await new Promise(resolve => {
       const found = findModalBtn();
@@ -269,7 +297,7 @@
       setTimeout(() => { clearInterval(timer); resolve(null); }, 5000);
     });
     if (nextBtn) { AI.log(PLATFORM, "Modal opened"); return nextBtn; }
-    AI.log(PLATFORM, "No modal after button click", "warn");
+    AI.log(PLATFORM, `No modal after button click — URL: ${location.href}`, "warn");
     return null;
   }
 
@@ -317,7 +345,11 @@
   // the disabled attribute set initially but still responds to .click().
   // We only skip aria-disabled="true" which is a deliberate accessibility block.
   function findBtn(...patterns) {
-    const btns = [...document.querySelectorAll("button, [role='button']")].filter(isVisible);
+    const sr = getShadowRoot();
+    const modal = (sr && sr.querySelector("[role='dialog'], .jobs-easy-apply-modal, [data-test-modal]")) ||
+                  document.querySelector("[role='dialog'], .jobs-easy-apply-modal, [data-test-modal]");
+    const root = modal || sr || document;
+    const btns = [...root.querySelectorAll("button, [role='button']")].filter(isVisible);
     for (const pat of patterns) {
       const re = pat instanceof RegExp ? pat : new RegExp(pat.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       const found = btns.find(b => {
@@ -351,14 +383,13 @@
         AI.log(PLATFORM, `fillAllFields error: ${e.message}`, "warn");
       }
 
-      const visibleBtns = [...document.querySelectorAll("button")].filter(isVisible);
+      const visibleBtns = shadowQueryAll("button").filter(isVisible);
       AI.log(PLATFORM, `Step ${step} buttons: ${visibleBtns.map(b => (b.innerText.trim() || b.getAttribute("aria-label") || "?").slice(0, 30)).join(" | ")}`);
 
       // LinkedIn SDUI labels: "Submit application", "Review your application",
       // "Continue to next step", "Next", "Continue", etc.
       const submitBtn = findBtn(/\bsubmit\b/i, /submit application/i);
       if (submitBtn) {
-        submitBtn.scrollIntoView({ behavior: "smooth", block: "center" });
         await AI.delay(800, 1200);
         submitBtn.click();
         await AI.delay(2000, 3000);
@@ -370,21 +401,42 @@
       const reviewBtn = findBtn(/\breview\b/i, /review your application/i);
       if (reviewBtn) { reviewBtn.click(); await AI.delay(1000, 1500); continue; }
 
-      const nextBtn = findBtn(/\bnext\b/i, /\bcontinue\b/i, /next step/i, /continue to next/i);
+      // Wait for an enabled, visible Next/Continue button — inside shadow DOM
+      const nextBtn = await waitForCondition(() =>
+        shadowQueryAll("button").find(b =>
+          b.getAttribute("aria-disabled") !== "true" && (
+            /continue to next step/i.test(b.getAttribute("aria-label") || "") ||
+            /submit application/i.test(b.getAttribute("aria-label") || "") ||
+            /review your application/i.test(b.getAttribute("aria-label") || "")
+          )
+        )
+      , 8000);
       if (nextBtn) {
-        nextBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+        AI.log(PLATFORM, `Next btn: <${nextBtn.tagName}> text="${nextBtn.innerText?.trim()}" aria-label="${nextBtn.getAttribute("aria-label")}" disabled=${nextBtn.disabled} aria-disabled=${nextBtn.getAttribute("aria-disabled")} inDOM=${document.contains(nextBtn)}`);
         await AI.delay(400, 700);
-        nextBtn.click();
+        nextBtn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+        nextBtn.dispatchEvent(new PointerEvent("pointerup",   { bubbles: true, cancelable: true }));
+        nextBtn.dispatchEvent(new MouseEvent("click",         { bubbles: true, cancelable: true }));
         await AI.delay(1500, 2500);
+        const afterBtns = shadowQueryAll("button").filter(isVisible).map(b => (b.innerText?.trim() || b.getAttribute("aria-label") || "?").slice(0, 30));
+        AI.log(PLATFORM, `After Next click — visible buttons: ${afterBtns.join(" | ")}`);
+        AI.log(PLATFORM, `After Next click — URL: ${location.href} | modal still open: ${!!shadowQuery("[data-test-modal]")}`);
         continue;
       }
+      const _diagModal = shadowQuery("[data-test-modal], .jobs-easy-apply-modal");
+      AI.log(PLATFORM, `Step ${step} — modal exists: ${!!_diagModal} | shadowRoot exists: ${!!getShadowRoot()}`);
+      if (_diagModal) {
+        const _allBtns = [..._diagModal.querySelectorAll("button")];
+        _allBtns.forEach(b => AI.log(PLATFORM, `  btn: "${b.innerText?.trim()}" aria-label="${b.getAttribute("aria-label")}" disabled=${b.disabled} aria-disabled="${b.getAttribute("aria-disabled")}"`));
+      }
+      AI.log(PLATFORM, `Step ${step} — no enabled Next button found`, "warn");
 
-      const errors = [...document.querySelectorAll("[role='alert'], [aria-live='assertive'], .artdeco-inline-feedback--error")]
+      const errors = shadowQueryAll("[role='alert'], [aria-live='assertive'], .artdeco-inline-feedback--error")
         .filter(e => isVisible(e) && e.innerText.trim());
       if (errors.length) {
-        AI.log(PLATFORM, `Form errors: ${errors.map(e => e.innerText.trim()).join(", ")}`, "warn");
-        // Don't close — try filling again on next iteration
-        continue;
+        AI.log(PLATFORM, `Blocking errors: ${errors.map(e => e.innerText.trim()).join(", ")}`, "error");
+        await closeModal();
+        return false;
       }
       // No actionable button found — wait and retry once before giving up
       if (step < 2) { await AI.delay(2000, 3000); continue; }
@@ -461,8 +513,10 @@
   // ── Fill all fields on current step ──────────────────────────────────────
   async function fillAllFields(settings, jobTitle = "", company = "", jobId = "") {
     const jobContext = jobTitle ? { jobTitle, company, jobId, platform: "linkedin" } : null;
-    const modal = document.querySelector(".jobs-easy-apply-modal, [class*='easy-apply-modal'], .artdeco-modal");
-    const root = modal || document;
+    const sr = getShadowRoot();
+    const modal = (sr && sr.querySelector(".jobs-easy-apply-modal, [data-test-modal], .artdeco-modal")) ||
+                  document.querySelector(".jobs-easy-apply-modal, [data-test-modal], .artdeco-modal");
+    const root = modal || sr || document;
     const seenRadioGroups = new Set();
 
     const fields = [...root.querySelectorAll(
@@ -508,10 +562,14 @@
         }
 
         trackAnswer(question, options.find(o => o.value === chosen)?.text || chosen, "select");
+        el.focus();
         const nativeSelectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
         if (nativeSelectSetter) nativeSelectSetter.call(el, chosen); else el.value = chosen;
-        el.dispatchEvent(new Event("input",  { bubbles: true }));
-        el.dispatchEvent(new Event("change", { bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true }));
+        el.dispatchEvent(new Event("input",           { bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent("keyup",   { bubbles: true }));
+        el.dispatchEvent(new Event("change",          { bubbles: true }));
+        el.dispatchEvent(new Event("blur",            { bubbles: true }));
         await AI.delay(300, 500);
 
       // ── Radio ──
@@ -580,12 +638,21 @@
         if (settings.apiKey) answer = await AI.answerQuestion(prompt, "text", [], answer, jobContext);
         trackAnswer(question, answer, "textarea");
         await AI.typeSlowly(el, answer);
+        el.dispatchEvent(new Event("blur", { bubbles: true }));
+
+      // ── File upload (resume) ──
+      } else if (el.type === "file") {
+        if (!el.value) {
+          AI.log(PLATFORM, "Resume file upload required — cannot automate, skipping job", "warn");
+          return false;
+        }
 
       // ── Text / number input ──
       } else {
-        if (el.value || el.type === "file" || el.type === "hidden") continue;
+        if (el.value || el.type === "hidden") continue;
         const question = AI.getQuestionText(el);
         if (!question.trim()) continue;
+        const isRequired = el.required || el.getAttribute("aria-required") === "true";
         const isNum = el.type === "number" || /how many|years of|number of/i.test(question);
         if (/phone|mobile|tel/i.test(question) && !AI.localFallback(question)) {
           trackAnswer(question, "", "text");
@@ -595,23 +662,34 @@
         let answer = isNum ? null : AI.localFallback(question);
         if (!answer && settings.apiKey)
           answer = await AI.answerQuestion(question, isNum ? "number" : "text", [], isNum ? "0" : "", jobContext);
-        if (!answer && !isNum) { trackAnswer(question, "", "text"); continue; }
+        if (!answer && !isNum) {
+          if (isRequired) {
+            AI.log(PLATFORM, `Required field has no answer: "${question}" — skipping job`, "warn");
+            return false;
+          }
+          trackAnswer(question, "", "text");
+          continue;
+        }
         answer = answer || (isNum ? "0" : "");
         if (isNum) answer = answer.match(/\d+/)?.[0] ?? "0";
         trackAnswer(question, answer, isNum ? "number" : "text");
 
+        el.focus();
+        el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true }));
         const isAutocomplete = el.getAttribute("role") === "combobox" ||
           el.getAttribute("aria-autocomplete") || /city|location/i.test(question);
         if (isAutocomplete) {
           await AI.typeSlowly(el, answer);
-          await AI.delay(1200, 1800);
-          const sug = document.querySelector(
-            ".basic-typeahead__selectable, [class*='typeahead'] li, [role='option'], [class*='autocomplete-result']"
+          await AI.delay(1000, 1500);
+          const sug = shadowQuery(
+            "[role='option'], .basic-typeahead__selectable, [class*='typeahead'] li, [class*='autocomplete-result']"
           );
           if (sug) { sug.click(); await AI.delay(500, 800); }
         } else {
           await AI.typeSlowly(el, answer);
         }
+        el.dispatchEvent(new KeyboardEvent("keyup",  { bubbles: true }));
+        el.dispatchEvent(new Event("blur",           { bubbles: true }));
       }
     }
   }
@@ -768,11 +846,10 @@
 
     AI.log(PLATFORM, `Apply page — filling form for "${state.jobTitle}" @ "${state.company}"`);
 
-    // Wait for form fields or nav buttons (LinkedIn makes XHR before rendering).
-    const formReady = await waitForElement(
-      "input, select, textarea, " +
-      "button[aria-label*='Submit'], button[aria-label*='Continue'], button[aria-label*='Next']",
-      25000
+    // Wait for actual form content AND a button — both must exist (check shadow DOM too)
+    const formReady = await waitForCondition(
+      () => shadowQuery("input, textarea, select") && shadowQuery("button"),
+      15000
     );
     if (!formReady) {
       AI.log(PLATFORM, "Form never rendered — giving up", "warn");
