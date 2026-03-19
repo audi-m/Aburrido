@@ -202,7 +202,7 @@
   }
 
   // ── Read job metadata from the right panel ────────────────────────────────
-  function getJobMeta(cardId) {
+  async function getJobMeta(cardId) {
     // Title: LinkedIn uses <a> or <h1> inside the top-card; class names are obfuscated
     const titleEl =
       document.querySelector(".job-details-jobs-unified-top-card__job-title a") ||
@@ -234,10 +234,37 @@
                      location.href.match(/\/jobs\/view\/(\d+)/);
     const jobId = urlMatch?.[1] || cardId || Date.now().toString();
 
-    const jobDescription = document.querySelector("#job-details")?.innerText?.trim()?.slice(0, 5000) || "";
+    // Scroll the right-side job detail panel to fully load the description
+    // LinkedIn's detail panel is the scrollable ancestor of #job-details
+    const jobDetailsEl = shadowQuery("#job-details") || document.querySelector("#job-details");
+    const detailPanel = document.querySelector(".jobs-search__job-details, .job-details-jobs-unified-top-card")?.closest("[class*='job-details']") ||
+                        document.querySelector("[class*='job-details--container']") ||
+                        document.querySelector(".scaffold-layout__detail");
+    if (detailPanel) {
+      // Scroll down in increments to trigger lazy-load
+      const scrollStep = 500;
+      const maxScroll = detailPanel.scrollHeight;
+      for (let pos = 0; pos < maxScroll; pos += scrollStep) {
+        detailPanel.scrollTop = pos;
+        await AI.delay(150, 250);
+      }
+      detailPanel.scrollTop = 0; // scroll back to top
+      await AI.delay(300, 500);
+    }
+    // Click "Show more" / "See more" / "...see more" to expand truncated description
+    const showMore = document.querySelector("button[aria-label*='Show more'], button[aria-label*='See more'], footer button, [class*='description'] button") ||
+                     shadowQuery("button[aria-label*='Show more'], button[aria-label*='See more']");
+    if (showMore && isVisible(showMore) && /show more|see more/i.test(showMore.innerText || showMore.getAttribute("aria-label") || "")) {
+      showMore.click();
+      await AI.delay(400, 600);
+    }
+    // Re-query after scroll + expand
+    const jobDescEl = shadowQuery("#job-details") || document.querySelector("#job-details") || jobDetailsEl;
+    const jobDescription = (jobDescEl?.innerText?.trim() || "").slice(0, 5000);
+    AI.log(PLATFORM, `Job description: ${jobDescription.length} chars`);
 
     const salaryText = (() => {
-      const panel = document.querySelector("#job-details")?.closest("div") || document.body;
+      const panel = (jobDetailsEl?.closest("div")) || document.body;
       const node = [...panel.querySelectorAll("*")]
         .flatMap(e => [...e.childNodes])
         .find(n => n.nodeType === 3 && /\$[\d,]+/.test(n.textContent));
@@ -306,7 +333,7 @@
     AI.log(PLATFORM, `Opening card ${card.id}…`);
     await openCard(card);
 
-    const { jobTitle, company, jobId, jobDescription, salaryText } = getJobMeta(card.id);
+    const { jobTitle, company, jobId, jobDescription, salaryText } = await getJobMeta(card.id);
 
     if (await AI.alreadyApplied("linkedin", jobId)) {
       AI.log(PLATFORM, `Already applied: ${jobTitle}`, "warn");
@@ -667,10 +694,9 @@
             AI.log(PLATFORM, `Required field has no answer: "${question}" — skipping job`, "warn");
             return false;
           }
-          trackAnswer(question, "", "text");
-          continue;
+          continue; // no answer — leave field blank, don't type empty string
         }
-        answer = answer || (isNum ? "0" : "");
+        if (!answer && isNum) answer = "0";
         if (isNum) answer = answer.match(/\d+/)?.[0] ?? "0";
         trackAnswer(question, answer, isNum ? "number" : "text");
 
