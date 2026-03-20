@@ -234,37 +234,51 @@
                      location.href.match(/\/jobs\/view\/(\d+)/);
     const jobId = urlMatch?.[1] || cardId || Date.now().toString();
 
-    // Scroll the right-side job detail panel to fully load the description
-    // LinkedIn's detail panel is the scrollable ancestor of #job-details
-    const jobDetailsEl = shadowQuery("#job-details") || document.querySelector("#job-details");
-    const detailPanel = document.querySelector(".jobs-search__job-details, .job-details-jobs-unified-top-card")?.closest("[class*='job-details']") ||
-                        document.querySelector("[class*='job-details--container']") ||
-                        document.querySelector(".scaffold-layout__detail");
+    // Find the right-side job detail panel. LinkedIn has two scrollable panels:
+    // left = job card list, right = selected job description. We need the RIGHT one.
+    // Strategy: find scrollable divs, exclude any that contain multiple "Easy Apply" mentions
+    // (that's the card list). The detail panel has the single job's full description.
+    const scrollables = [...document.querySelectorAll("*")].filter(el => {
+      if (el.scrollHeight <= el.clientHeight + 50 || el.clientHeight < 200) return false;
+      return getComputedStyle(el).overflow !== "visible";
+    });
+    const detailPanel = scrollables.find(el => {
+      const text = el.innerText || "";
+      const easyApplyCount = (text.match(/Easy Apply/g) || []).length;
+      // The card list has many "Easy Apply" mentions; the detail panel has 0 or 1
+      return easyApplyCount <= 1 && text.length > 200;
+    });
+
     if (detailPanel) {
-      // Scroll down in increments to trigger lazy-load
-      const scrollStep = 500;
-      const maxScroll = detailPanel.scrollHeight;
-      for (let pos = 0; pos < maxScroll; pos += scrollStep) {
+      AI.log(PLATFORM, `Scrolling job detail panel (${detailPanel.scrollHeight}px)`);
+      const scrollStep = 400;
+      for (let pos = 0; pos < detailPanel.scrollHeight; pos += scrollStep) {
         detailPanel.scrollTop = pos;
-        await AI.delay(150, 250);
+        await AI.delay(100, 200);
       }
-      detailPanel.scrollTop = 0; // scroll back to top
       await AI.delay(300, 500);
+      detailPanel.scrollTop = 0;
+      await AI.delay(200, 300);
     }
-    // Click "Show more" / "See more" / "...see more" to expand truncated description
-    const showMore = document.querySelector("button[aria-label*='Show more'], button[aria-label*='See more'], footer button, [class*='description'] button") ||
-                     shadowQuery("button[aria-label*='Show more'], button[aria-label*='See more']");
-    if (showMore && isVisible(showMore) && /show more|see more/i.test(showMore.innerText || showMore.getAttribute("aria-label") || "")) {
-      showMore.click();
-      await AI.delay(400, 600);
+
+    // Click "Show more" / "See more" to expand truncated description
+    if (detailPanel) {
+      const showMoreBtns = [...detailPanel.querySelectorAll("button, [role='button']")].filter(b =>
+        isVisible(b) && /show more|see more/i.test((b.innerText || "") + (b.getAttribute("aria-label") || ""))
+      );
+      for (const btn of showMoreBtns) {
+        btn.click();
+        await AI.delay(300, 500);
+      }
     }
-    // Re-query after scroll + expand
-    const jobDescEl = shadowQuery("#job-details") || document.querySelector("#job-details") || jobDetailsEl;
-    const jobDescription = (jobDescEl?.innerText?.trim() || "").slice(0, 5000);
+
+    // Extract job description from the detail panel only
+    const jobDescEl = shadowQuery("#job-details") || document.querySelector("#job-details");
+    const jobDescription = (jobDescEl?.innerText?.trim() || detailPanel?.innerText?.trim() || "").slice(0, 5000);
     AI.log(PLATFORM, `Job description: ${jobDescription.length} chars`);
 
     const salaryText = (() => {
-      const panel = (jobDetailsEl?.closest("div")) || document.body;
+      const panel = (jobDescEl?.closest("div")) || document.body;
       const node = [...panel.querySelectorAll("*")]
         .flatMap(e => [...e.childNodes])
         .find(n => n.nodeType === 3 && /\$[\d,]+/.test(n.textContent));
@@ -361,6 +375,7 @@
     const success = await completeApplyForm(jobTitle, company, settings, applicationData);
     if (success) {
       AI.log(PLATFORM, `✅ Applied: ${jobTitle} @ ${company}`, "success");
+      await AI.recordApplication({ ...applicationData, status: "applied", answers: _applicationAnswers });
     } else {
       AI.log(PLATFORM, `❌ Failed: ${jobTitle} @ ${company}`, "error");
       await AI.recordApplication({ ...applicationData, status: "failed", answers: _applicationAnswers });

@@ -145,8 +145,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 updateApplicationScore(userId, msg.application.jobId || msg.application.job_id, sd.score, sd.missing_skills)
                   .catch(e => console.error("[Aburrido] updateApplicationScore error:", e.message));
                 if (sd.missing_skills?.length && jobApplicationId) {
-                  saveMissingSkills(jobApplicationId, userProfileId, sd.missing_skills)
-                    .catch(e => console.error("[Aburrido] saveMissingSkills error:", e.message));
+                  // Deduplicate against existing skills before inserting
+                  const existingRows = await getMissingSkillsByAppIds(
+                    (await getApplications(userId)).map(a => a.job_application_id).filter(Boolean)
+                  ).catch(() => []);
+                  const existingSkills = [...new Set((existingRows || []).map(r => r.skill_title))];
+                  const dedupedSkills = await deduplicateSkills(sv.apiKey, sd.missing_skills, existingSkills);
+                  if (dedupedSkills.length) {
+                    saveMissingSkills(jobApplicationId, userProfileId, dedupedSkills)
+                      .catch(e => console.error("[Aburrido] saveMissingSkills error:", e.message));
+                  }
                 }
               }
             })
@@ -724,8 +732,7 @@ async function scoreApplication(apiKey, settings, jobTitle, company, jobDescript
   const factSheet = pd
     ? `Title: ${pd.currentTitle || ""}\nExp: ${pd.totalYearsExperience || 0}yr\nSkills: ${(pd.skills || []).slice(0, 25).join(", ")}\nTech exp: ${JSON.stringify(pd.yearsExperienceByTech || {})}`
     : (settings?.profile?.rawText || "").slice(0, 1500);
-
-  const prompt = `Score this candidate 0-100% for the role and list key missing skills.
+  const prompt = `Score this candidate 0-100% for the role and list ONLY truly missing skills.
 
 CANDIDATE:
 ${factSheet.slice(0, 1200)}
@@ -734,10 +741,22 @@ ROLE: ${jobTitle} at ${company}
 JD (excerpt):
 ${jobDescription.slice(0, 1200)}
 
+INSTRUCTIONS:
+1. Extract all relevant skills, technologies, tools, and qualifications from BOTH the candidate profile and the job description.
+2. Normalize and group similar or equivalent skills — treat closely related technologies as MATCHED, not missing:
+   - ".NET" ≈ "C#" ≈ ".NET Core" ≈ "ASP.NET"
+   - "JavaScript" ≈ "TypeScript" (partial match)
+   - "React" ≈ "Frontend frameworks" (partial match)
+   - "SQL Server" ≈ "Relational Databases"
+   Use semantic understanding, not exact string matching.
+3. Only list a skill as missing if it is NOT covered by equivalent or closely related experience and is a meaningful requirement (ignore trivial tools or soft skills unless emphasized).
+4. Be conservative: do NOT hallucinate skills or assume experience unless clearly implied.
+5. Prioritize core technologies, frameworks, and domain knowledge. Deprioritize generic items like "communication skills".
+
 Respond ONLY with valid JSON (no markdown):
 {"score":72,"missing_skills":["Docker","Kubernetes","Go"]}
 
-score = 0–100 percentage match (100=perfect). missing_skills = 3–6 concise skill names the candidate lacks for THIS role.`;
+score = 0–100 percentage match (100=perfect). missing_skills = only truly missing skills the candidate lacks (3–6 max, concise skill names).`;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -755,6 +774,51 @@ score = 0–100 percentage match (100=perfect). missing_skills = 3–6 concise s
     const text = (data.content?.[0]?.text || "").trim().replace(/```(?:json)?|```/g, "");
     return JSON.parse(text);
   } catch { return null; }
+}
+
+// ── Deduplicate missing skills using LLM ──────────────────────────────────────
+// Given new skills from scoring and existing skills already in DB, ask Claude
+// to remove duplicates/equivalents and normalize names.
+async function deduplicateSkills(apiKey, newSkills, existingSkills) {
+  if (!newSkills?.length) return [];
+  if (!existingSkills?.length) return newSkills; // nothing to dedup against
+
+  const prompt = `You are a skill deduplication engine. Given EXISTING skills already stored and NEW skills to add, return ONLY the truly new skills that are NOT duplicates or equivalents of existing ones.
+
+Rules:
+- Treat similar/equivalent technologies as duplicates: "C#" ≈ ".NET" ≈ "C#/.NET" ≈ ".NET/C#" ≈ "ASP.NET"
+- "JavaScript" ≈ "JS", "TypeScript" ≈ "TS"
+- "React.js" ≈ "React" ≈ "ReactJS"
+- "SQL Server" ≈ "MSSQL" ≈ "Microsoft SQL Server"
+- Use semantic understanding, not string matching
+- Normalize the skill names to their most common short form (e.g. "C#" not "C# / .NET")
+- If a new skill is already covered by an existing one, exclude it
+
+EXISTING: ${JSON.stringify(existingSkills.slice(0, 50))}
+NEW: ${JSON.stringify(newSkills)}
+
+Respond ONLY with a JSON array of truly new, normalized skill names. Example: ["Docker","Kubernetes"]
+If all are duplicates, respond with: []`;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 150, messages: [{ role: "user", content: prompt }] }),
+    });
+    if (!res.ok) return newSkills; // fallback: insert all
+    const data = await res.json();
+    const text = (data.content?.[0]?.text || "").trim().replace(/```(?:json)?|```/g, "");
+    const result = JSON.parse(text);
+    return Array.isArray(result) ? result : newSkills;
+  } catch {
+    return newSkills; // fallback: insert all on error
+  }
 }
 
 async function updateLocalAppScore(jobId, scoreData) {
