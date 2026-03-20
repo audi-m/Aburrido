@@ -30,6 +30,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!merged.platforms || typeof merged.platforms !== "object") {
           merged.platforms = { ...DEFAULT_SETTINGS.platforms };
         }
+        // If signed in, sync profileData from DB (DB is source of truth)
+        try {
+          const session = await getSession();
+          const uid = getUserId(session);
+          if (uid) {
+            const dbProfile = await getProfile(uid);
+            if (dbProfile?.profile_data) {
+              const localPD = merged.profileData || {};
+              const remotePD = dbProfile.profile_data || {};
+              // DB wins, but preserve any local-only fields not yet in DB
+              merged.profileData = { ...localPD, ...remotePD };
+            }
+          }
+        } catch {}
         sendResponse(merged);
         break;
       }
@@ -272,16 +286,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case "SAVE_PROFILE": {
         const data = await chrome.storage.local.get("settings");
         const settings = data.settings || DEFAULT_SETTINGS;
-        settings.profile = msg.profile;
-        if (msg.profileData) settings.profileData = msg.profileData;
+        // Merge scanned profile — only overwrite fields that have a value in the new scan.
+        // This preserves manually entered data (phone, email, etc.) that the scan can't find.
+        const existing = settings.profile || {};
+        const incoming = msg.profile || {};
+        settings.profile = { ...existing };
+        for (const [key, val] of Object.entries(incoming)) {
+          if (val && (typeof val === "string" ? val.trim() : Array.isArray(val) ? val.length : val)) {
+            settings.profile[key] = val;
+          }
+        }
+        if (msg.profileData) {
+          const existingPD = settings.profileData || {};
+          settings.profileData = { ...existingPD };
+          for (const [key, val] of Object.entries(msg.profileData)) {
+            if (val && (typeof val === "string" ? val.trim() : Array.isArray(val) ? val.length : val)) {
+              settings.profileData[key] = val;
+            }
+          }
+        }
         await chrome.storage.local.set({ settings });
 
         const session = await getSession();
         const userId = getUserId(session);
+        console.log("[Aburrido] SAVE_PROFILE — userId:", userId || "NOT SIGNED IN");
+        console.log("[Aburrido] SAVE_PROFILE — profileData phone:", settings.profileData?.phone);
         if (userId) {
-          saveProfile(userId, msg.profile, msg.profileData || settings.profileData || null).catch(e => {
-            console.error("SAVE_PROFILE DB error:", e.message);
-          });
+          // Use the merged profileData (not msg.profileData) so DB gets the full picture
+          saveProfile(userId, settings.profile, settings.profileData || null)
+            .then(r => console.log("[Aburrido] SAVE_PROFILE DB success:", JSON.stringify(r)?.slice(0, 200)))
+            .catch(e => console.error("SAVE_PROFILE DB error:", e.message));
+        } else {
+          console.warn("[Aburrido] SAVE_PROFILE — skipped DB save, not signed in");
         }
         sendResponse({ ok: true });
         break;

@@ -350,7 +350,7 @@
     const { jobTitle, company, jobId, jobDescription, salaryText } = await getJobMeta(card.id);
 
     if (await AI.alreadyApplied("linkedin", jobId)) {
-      AI.log(PLATFORM, `Already applied: ${jobTitle}`, "warn");
+      AI.log(PLATFORM, `⏭ SKIP (already applied): ${jobTitle}`, "warn");
       return;
     }
 
@@ -368,7 +368,7 @@
     };
 
     const result = await openEasyApply();
-    if (result === null) { AI.log(PLATFORM, `No Easy Apply button: ${jobTitle}`, "warn"); return; }
+    if (result === null) { AI.log(PLATFORM, `⏭ SKIP (no Easy Apply button): ${jobTitle}`, "warn"); return; }
     if (result === "navigating") return; // page is navigating away — done here
 
     // Modal path (older LinkedIn flow)
@@ -775,19 +775,32 @@
 
     if (shouldStop) return;
 
-    // Next page
-    const nextPageBtn =
-      document.querySelector("button[aria-label='View next page']") ||
-      document.querySelector("button[aria-label='Next']") ||
-      document.querySelector("li.artdeco-pagination__indicator--number.active + li button");
+    // Next page — the pagination "Next" button has no aria-label, just innerText="Next".
+    // Page number buttons have aria-label="Page 1", "Page 2", etc.
+    // Strategy: find all page number buttons, then find the "Next" text button nearby.
+    const pageNumBtns = [...document.querySelectorAll("button")].filter(b =>
+      /^Page \d+$/i.test(b.getAttribute("aria-label") || "")
+    );
+    let nextPageBtn = null;
+    if (pageNumBtns.length) {
+      // "Next" button is a sibling or nearby element to the page number buttons
+      const allBtns = [...document.querySelectorAll("button")];
+      nextPageBtn = allBtns.find(b =>
+        (b.innerText || "").trim() === "Next" &&
+        !b.getAttribute("aria-label") &&
+        isVisible(b)
+      );
+    }
 
-    if (nextPageBtn) {
-      AI.log(PLATFORM, "→ Next page");
+    if (nextPageBtn && isVisible(nextPageBtn)) {
+      AI.log(PLATFORM, `→ Next page (btn text="${nextPageBtn.innerText.trim()}")`);
+      nextPageBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+      await AI.delay(500, 800);
       nextPageBtn.click();
       await AI.delay(4000, 6000);
       await processJobListings(settings);
     } else {
-      AI.log(PLATFORM, "No more pages");
+      AI.log(PLATFORM, "No more pages — pagination button not found");
     }
   }
 
