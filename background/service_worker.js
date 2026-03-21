@@ -1,6 +1,6 @@
 // background/service_worker.js
 import { getSession, signInWithGoogle, signOut } from '../lib/auth.js';
-import { getApplications, recordApplication, getSavedAnswer, saveQuestion, savePendingQuestion, getPendingQuestions, answerPendingQuestion, saveProfile, getProfile, getSavedQuestions, updateSavedAnswer, updateApplicationScore, addProfileSkill, saveMissingSkills, getMissingSkillsByAppIds, saveApplicationAnswers, getApplicationAnswers } from '../lib/db.js';
+import { getApplications, recordApplication, getSavedAnswer, saveQuestion, savePendingQuestion, getPendingQuestions, answerPendingQuestion, saveProfile, getProfile, getSavedQuestions, updateSavedAnswer, updateApplicationScore, addProfileSkill, saveMissingSkills, getMissingSkillsByAppIds, saveApplicationAnswers, getApplicationAnswers, deleteApplication } from '../lib/db.js';
 
 const DEFAULT_SETTINGS = {
   apiKey: "",
@@ -535,6 +535,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch (e) {
           sendResponse({ answers: [], error: e.message });
         }
+        break;
+      }
+
+      case "DELETE_APPLICATION": {
+        // Delete from DB if signed in
+        const session = await getSession();
+        const userId = getUserId(session);
+        if (userId && msg.jobApplicationId) {
+          try {
+            await deleteApplication(msg.jobApplicationId);
+          } catch (e) {
+            console.error("[Aburrido] DELETE_APPLICATION DB error:", e.message);
+          }
+        }
+        // Also remove from local storage
+        const localData = await chrome.storage.local.get("applications");
+        const localApps = localData.applications || [];
+        const jobId = msg.jobId;
+        const updated = localApps.filter(a => (a.jobId || a.job_id) !== jobId);
+        await chrome.storage.local.set({ applications: updated });
+        sendResponse({ ok: true });
         break;
       }
 

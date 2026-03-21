@@ -488,6 +488,12 @@
           <button class="filter-btn" data-filter="indeed">Indeed</button>
           <button class="filter-btn" data-filter="applied">Applied</button>
           <button class="filter-btn" data-filter="failed">Failed</button>
+          <select id="pageSizeSelect" style="margin-left:auto;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:#1a1f2e;color:#e2e8f0;font-size:12px;cursor:pointer">
+            <option value="10" style="background:#1a1f2e;color:#e2e8f0">10 / page</option>
+            <option value="20" selected style="background:#1a1f2e;color:#e2e8f0">20 / page</option>
+            <option value="100" style="background:#1a1f2e;color:#e2e8f0">100 / page</option>
+            <option value="1000" style="background:#1a1f2e;color:#e2e8f0">1000 / page</option>
+          </select>
         </div>
       </div>
       <table>
@@ -501,6 +507,7 @@
             <th>Match %</th>
             <th>Skills Gap</th>
             <th>Date</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="appTableBody"></tbody>

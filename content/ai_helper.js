@@ -99,15 +99,19 @@ window.AutoApplyAI = {
       Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set ||
       Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
 
+    // Safe setter that handles shadow DOM elements (Illegal invocation fallback)
+    const safeSet = (target, val) => {
+      try { if (nativeSetter) nativeSetter.call(target, val); else target.value = val; }
+      catch { target.value = val; }
+    };
+
     // Clear existing value
-    if (nativeSetter) nativeSetter.call(el, "");
-    else el.value = "";
+    safeSet(el, "");
     el.dispatchEvent(new Event("input", { bubbles: true }));
 
     for (const char of text) {
       const current = el.value + char;
-      if (nativeSetter) nativeSetter.call(el, current);
-      else el.value = current;
+      safeSet(el, current);
       el.dispatchEvent(new Event("input", { bubbles: true }));
       // 80–220ms per character — slow enough to look human
       await this.delay(80, 220);

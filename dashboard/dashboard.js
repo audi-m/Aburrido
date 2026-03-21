@@ -3,7 +3,7 @@ let allQuestions = [];
 let currentFilter = "all";
 let currentQAFilter = "all";
 let currentPage = 1;
-const PER_PAGE = 20;
+let PER_PAGE = 20;
 
 // ── Message helpers ────────────────────────────────────────────────────────────
 function getStats() {
@@ -230,6 +230,7 @@ function renderTable() {
         <td><span class="score-badge score-${scoreLevel}" title="${score ? `${score}% profile match` : "Not scored yet"}">${score ? `${score}<span style="font-size:9px;opacity:0.7">%</span>` : "–"}</span></td>
         <td>${skillsHtml}</td>
         <td class="td-time">${date}</td>
+        <td><button class="btn-delete-app" data-job-id="${app.jobId || app.job_id}" data-app-id="${app.job_application_id || ""}" title="Delete application" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;opacity:0.6;padding:2px 6px">&#x2715;</button></td>
       </tr>`;
     }).join("");
 
@@ -262,6 +263,25 @@ function renderTable() {
       badge.addEventListener("click", e => {
         e.stopPropagation();
         switchTab("navQA");
+      });
+    });
+
+    // Delete application
+    tbody.querySelectorAll(".btn-delete-app").forEach(btn => {
+      btn.addEventListener("click", async e => {
+        e.stopPropagation();
+        if (!confirm("Delete this application?")) return;
+        btn.textContent = "…";
+        await new Promise(resolve =>
+          chrome.runtime.sendMessage({
+            type: "DELETE_APPLICATION",
+            jobApplicationId: btn.dataset.appId || null,
+            jobId: btn.dataset.jobId,
+          }, r => resolve(r))
+        );
+        // Remove from local list and re-render
+        allApps = allApps.filter(a => (a.jobId || a.job_id) !== btn.dataset.jobId);
+        renderTable();
       });
     });
   }
@@ -741,6 +761,12 @@ document.querySelectorAll(".filter-btn").forEach(btn => {
     currentPage = 1;
     renderTable();
   });
+});
+
+document.getElementById("pageSizeSelect")?.addEventListener("change", e => {
+  PER_PAGE = parseInt(e.target.value) || 20;
+  currentPage = 1;
+  renderTable();
 });
 
 // Q&A filter buttons

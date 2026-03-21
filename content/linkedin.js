@@ -82,13 +82,6 @@
     });
   }
 
-  function extractSalary(text) {
-    const m = (text || "").match(/\$?([\d,]+)k?/i);
-    if (!m) return null;
-    let n = parseInt(m[1].replace(/,/g, ""));
-    if (/k/i.test(text)) n *= 1000;
-    return n;
-  }
 
   // Cache settings for localFallback
   AI.getSettings().then(s => {
@@ -344,40 +337,42 @@
 
   // ── Process a single job card ─────────────────────────────────────────────
   async function processCard(card, settings) {
-    AI.log(PLATFORM, `Opening card ${card.id}…`);
+    AI.log(PLATFORM, `── Opening card ${card.id} ──`);
     await openCard(card);
 
     const { jobTitle, company, jobId, jobDescription, salaryText } = await getJobMeta(card.id);
+    AI.log(PLATFORM, `Job: "${jobTitle}" @ "${company}" | id=${jobId} | desc=${jobDescription.length}chars | salary="${salaryText}"`);
 
-    if (await AI.alreadyApplied("linkedin", jobId)) {
-      AI.log(PLATFORM, `⏭ SKIP (already applied): ${jobTitle}`, "warn");
+    const alreadyApplied = await AI.alreadyApplied("linkedin", jobId);
+    if (alreadyApplied) {
+      AI.log(PLATFORM, `⏭ SKIP (already applied): "${jobTitle}" [jobId=${jobId}]`, "warn");
       return;
     }
 
-    if (settings.minSalary && salaryText) {
-      const sal = extractSalary(salaryText);
-      if (sal && sal < settings.minSalary) {
-        AI.log(PLATFORM, `Salary too low ($${sal}): ${jobTitle}`, "warn");
-        return;
-      }
-    }
 
     const applicationData = {
       platform: "linkedin", jobId, jobTitle, company,
       url: location.href, salary: salaryText, jobDescription,
     };
 
+    AI.log(PLATFORM, `Looking for Easy Apply button…`);
     const result = await openEasyApply();
-    if (result === null) { AI.log(PLATFORM, `⏭ SKIP (no Easy Apply button): ${jobTitle}`, "warn"); return; }
-    if (result === "navigating") return; // page is navigating away — done here
+    if (result === null) {
+      AI.log(PLATFORM, `⏭ SKIP (no Easy Apply button found): "${jobTitle}" — URL: ${location.href}`, "warn");
+      return;
+    }
+    if (result === "navigating") {
+      AI.log(PLATFORM, `⏭ NAVIGATING to apply page: "${jobTitle}"`, "warn");
+      return;
+    }
 
-    // Modal path (older LinkedIn flow)
+    AI.log(PLATFORM, `Filling form for: "${jobTitle}" @ "${company}"…`);
     const success = await completeApplyForm(jobTitle, company, settings, applicationData);
     if (success) {
-      AI.log(PLATFORM, `✅ Applied: ${jobTitle} @ ${company}`, "success");
+      AI.log(PLATFORM, `✅ Applied: "${jobTitle}" @ "${company}"`, "success");
       await AI.recordApplication({ ...applicationData, status: "applied", answers: _applicationAnswers });
     } else {
-      AI.log(PLATFORM, `❌ Failed: ${jobTitle} @ ${company}`, "error");
+      AI.log(PLATFORM, `❌ Failed to complete form: "${jobTitle}" @ "${company}"`, "error");
       await AI.recordApplication({ ...applicationData, status: "failed", answers: _applicationAnswers });
     }
   }
@@ -431,6 +426,7 @@
       // LinkedIn SDUI labels: "Submit application", "Review your application",
       // "Continue to next step", "Next", "Continue", etc.
       const submitBtn = findBtn(/\bsubmit\b/i, /submit application/i);
+      AI.log(PLATFORM, `Submit btn search: ${submitBtn ? `FOUND <${submitBtn.tagName}> "${submitBtn.innerText?.trim()}"` : "NOT FOUND"}`);
       if (submitBtn) {
         await AI.delay(800, 1200);
         submitBtn.click();
@@ -441,7 +437,12 @@
       }
 
       const reviewBtn = findBtn(/\breview\b/i, /review your application/i);
-      if (reviewBtn) { reviewBtn.click(); await AI.delay(1000, 1500); continue; }
+      AI.log(PLATFORM, `Review btn search: ${reviewBtn ? `FOUND <${reviewBtn.tagName}> "${reviewBtn.innerText?.trim()}"` : "NOT FOUND"}`);
+      if (reviewBtn) {
+        reviewBtn.click();
+        await AI.delay(1000, 1500);
+        continue;
+      }
 
       // Wait for an enabled, visible Next/Continue button — inside shadow DOM
       const nextBtn = await waitForCondition(() =>
@@ -524,7 +525,10 @@
     const fieldset = radio.closest("fieldset");
     if (fieldset) {
       const labelId = fieldset.getAttribute("aria-labelledby");
-      if (labelId) { const t = clean(document.getElementById(labelId)?.innerText); if (t) return t; }
+      if (labelId) {
+        const labelEl = (getShadowRoot()?.getElementById?.(labelId)) || document.getElementById(labelId);
+        const t = clean(labelEl?.innerText); if (t) return t;
+      }
       const t = clean(fieldset.querySelector("legend")?.innerText);
       if (t) return t;
     }
@@ -605,8 +609,10 @@
 
         trackAnswer(question, options.find(o => o.value === chosen)?.text || chosen, "select");
         el.focus();
-        const nativeSelectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
-        if (nativeSelectSetter) nativeSelectSetter.call(el, chosen); else el.value = chosen;
+        try {
+          const nativeSelectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+          if (nativeSelectSetter) nativeSelectSetter.call(el, chosen); else el.value = chosen;
+        } catch { el.value = chosen; }
         el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true }));
         el.dispatchEvent(new Event("input",           { bubbles: true }));
         el.dispatchEvent(new KeyboardEvent("keyup",   { bubbles: true }));
@@ -659,8 +665,10 @@
         el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
         await AI.delay(300, 500);
         if (!el.checked) {
-          const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "checked")?.set;
-          if (s) s.call(el, true); else el.checked = true;
+          try {
+            const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "checked")?.set;
+            if (s) s.call(el, true); else el.checked = true;
+          } catch { el.checked = true; }
           el.dispatchEvent(new Event("change", { bubbles: true }));
         }
         await AI.delay(200, 400);
@@ -744,28 +752,21 @@
     );
     await AI.delay(1000, 1500);
 
-    const processedIds = new Set();
+    // Snapshot the card list ONCE — don't re-scan each iteration.
+    // LinkedIn re-renders cards after interaction, which shifts position-based IDs.
+    const cards = findJobCards();
+    AI.log(PLATFORM, `Processing ${cards.length} cards on this page`);
 
-    while (!shouldStop) {
+    for (let i = 0; i < cards.length; i++) {
+      if (shouldStop) break;
       const budget = await AI.checkBudget();
       if (budget.remaining <= 0) { AI.log(PLATFORM, "Daily limit reached", "warn"); break; }
 
-      const cards = findJobCards();
-      const next = cards.find(c => !processedIds.has(c.id));
-
-      if (!next) {
-        AI.log(PLATFORM, `All ${cards.length} cards on this page done`);
-        break;
-      }
-
-      processedIds.add(next.id);
-      AI.log(PLATFORM, `Card ${processedIds.size}/${cards.length}`);
+      const card = cards[i];
+      AI.log(PLATFORM, `Card ${i + 1}/${cards.length}`);
 
       try {
-        await processCard(next, settings);
-        // For position-based cards, card.id was updated to the real job ID after opening.
-        // Add it to processedIds so we don't re-process it on the next findJobCards call.
-        if (next.id !== `pos_${processedIds.size - 1}`) processedIds.add(next.id);
+        await processCard(card, settings);
       } catch (e) {
         AI.log(PLATFORM, `Error: ${e.message}`, "error");
         await closeModal();
