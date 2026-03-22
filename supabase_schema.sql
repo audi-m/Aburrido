@@ -659,6 +659,34 @@ ALTER TABLE public.user_saved_question
 CREATE INDEX IF NOT EXISTS idx_savedq_context ON public.user_saved_question
   USING gin(context) WHERE context IS NOT NULL;
 
+-- v1.4 — Resume tracking on user_profile
+ALTER TABLE public.user_profile
+  ADD COLUMN IF NOT EXISTS is_resume_uploaded BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS resume_file_name   TEXT,
+  ADD COLUMN IF NOT EXISTS resume_uploaded_at TIMESTAMPTZ;
+
+-- v1.5 — AI Query Log
+CREATE TABLE IF NOT EXISTS public.ai_query_log (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID        NOT NULL REFERENCES public.users(user_id) ON DELETE CASCADE,
+  query_type      TEXT        NOT NULL DEFAULT 'form_answer',
+  prompt          TEXT,
+  answer          TEXT,
+  question        TEXT,
+  field_type      TEXT        DEFAULT 'text',
+  job_title       TEXT,
+  company         TEXT,
+  job_id          TEXT,
+  platform        TEXT,
+  from_cache      BOOLEAN     DEFAULT FALSE,
+  created_time    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_query_log_user ON public.ai_query_log(user_id);
+ALTER TABLE public.ai_query_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "ai_query_log_own" ON public.ai_query_log FOR ALL
+  USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
 -- v1.3 — Competency scoring on job applications
 ALTER TABLE public.job_application
   ADD COLUMN IF NOT EXISTS competency_score INTEGER,

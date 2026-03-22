@@ -1,9 +1,11 @@
 // background/service_worker.js
 import { getSession, signInWithGoogle, signOut } from '../lib/auth.js';
-import { getApplications, recordApplication, getSavedAnswer, saveQuestion, savePendingQuestion, getPendingQuestions, answerPendingQuestion, saveProfile, getProfile, getSavedQuestions, updateSavedAnswer, updateApplicationScore, addProfileSkill, saveMissingSkills, getMissingSkillsByAppIds, saveApplicationAnswers, getApplicationAnswers, deleteApplication } from '../lib/db.js';
+import { getApplications, recordApplication, getSavedAnswer, saveQuestion, savePendingQuestion, getPendingQuestions, answerPendingQuestion, saveProfile, getProfile, getSavedQuestions, updateSavedAnswer, updateApplicationScore, addProfileSkill, saveMissingSkills, getMissingSkillsByAppIds, saveApplicationAnswers, getApplicationAnswers, getAllApplicationAnswers, deleteApplication, saveAIQueryLog, getAIQueryLogs } from '../lib/db.js';
 
 const DEFAULT_SETTINGS = {
   apiKey: "",
+  aiProvider: "anthropic", // "anthropic" | "gemini" | "openai"
+  apiKeys: { anthropic: "", gemini: "", openai: "" },
   dailyLimit: 40,
   minSalary: 100000,
   autopilot: false,
@@ -30,6 +32,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!merged.platforms || typeof merged.platforms !== "object") {
           merged.platforms = { ...DEFAULT_SETTINGS.platforms };
         }
+        // Migrate old single apiKey to new apiKeys structure
+        if (!merged.apiKeys) merged.apiKeys = { anthropic: "", gemini: "", openai: "" };
+        if (merged.apiKey && !merged.apiKeys.anthropic) {
+          merged.apiKeys.anthropic = merged.apiKey;
+          merged.aiProvider = "anthropic";
+        }
         // If signed in, sync profileData from DB (DB is source of truth)
         try {
           const session = await getSession();
@@ -39,8 +47,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (dbProfile?.profile_data) {
               const localPD = merged.profileData || {};
               const remotePD = dbProfile.profile_data || {};
-              // DB wins, but preserve any local-only fields not yet in DB
-              merged.profileData = { ...localPD, ...remotePD };
+              // Merge: DB wins for non-empty values, local preserved for fields DB doesn't have
+              merged.profileData = { ...localPD };
+              for (const [key, val] of Object.entries(remotePD)) {
+                if (val !== null && val !== undefined && val !== "") {
+                  merged.profileData[key] = val;
+                }
+              }
+            }
+            // Also pull resume fields from DB columns (in case profileData doesn't have them)
+            if (dbProfile?.is_resume_uploaded && !merged.profileData?.resumeFileName) {
+              merged.profileData = merged.profileData || {};
+              merged.profileData.resumeFileName = dbProfile.resume_file_name;
+              merged.profileData.resumeUploadedAt = dbProfile.resume_uploaded_at;
             }
           }
         } catch {}
@@ -150,8 +169,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         // Score in background — non-blocking
         const { settings: sv } = await chrome.storage.local.get("settings");
-        if (sv?.apiKey && msg.application.jobDescription) {
-          scoreApplication(sv.apiKey, sv, msg.application.jobTitle, msg.application.company, msg.application.jobDescription)
+        if ((sv?.apiKeys?.[sv?.aiProvider] || sv?.apiKey) && msg.application.jobDescription) {
+          scoreApplication(msg.application.jobTitle, msg.application.company, msg.application.jobDescription)
             .then(async sd => {
               if (!sd?.score) return;
               await updateLocalAppScore(msg.application.jobId || msg.application.job_id, sd);
@@ -164,7 +183,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                     (await getApplications(userId)).map(a => a.job_application_id).filter(Boolean)
                   ).catch(() => []);
                   const existingSkills = [...new Set((existingRows || []).map(r => r.skill_title))];
-                  const dedupedSkills = await deduplicateSkills(sv.apiKey, sd.missing_skills, existingSkills);
+                  const dedupedSkills = await deduplicateSkills(sd.missing_skills, existingSkills);
                   if (dedupedSkills.length) {
                     saveMissingSkills(jobApplicationId, userProfileId, dedupedSkills)
                       .catch(e => console.error("[Aburrido] saveMissingSkills error:", e.message));
@@ -221,7 +240,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // ── Ask Claude (with saved Q&A cache) ──────────────────────────────────
       case "ASK_AI": {
         const { settings } = await chrome.storage.local.get("settings");
-        if (!(settings || DEFAULT_SETTINGS).apiKey) {
+        const activeKey = settings?.apiKeys?.[settings?.aiProvider] || settings?.apiKey;
+        if (!activeKey) {
           sendResponse({ answer: msg.fallback || "N/A", error: "No API key" });
           break;
         }
@@ -249,9 +269,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
 
         try {
-          const answer = await askClaude(
-            settings.apiKey,
-            settings.profile,
+          const answer = await askAI(
             msg.question,
             msg.fieldType,
             msg.options
@@ -273,6 +291,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               savePendingQuestion(userId, msg.question, msg.platform || "unknown", msg.fieldType || "text", msg.context || null)
                 .catch(e => console.error("[Aburrido] savePendingQuestion DB error:", e.message));
             }
+            // AI query logged inside askAI()
           }
 
           sendResponse({ answer });
@@ -284,10 +303,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       // ── Profile ─────────────────────────────────────────────────────────────
       case "SAVE_PROFILE": {
+        // Read current local settings and merge incoming data
         const data = await chrome.storage.local.get("settings");
         const settings = data.settings || DEFAULT_SETTINGS;
-        // Merge scanned profile — only overwrite fields that have a value in the new scan.
-        // This preserves manually entered data (phone, email, etc.) that the scan can't find.
+
+        // Merge profile: incoming values overwrite, empty values preserved from existing
         const existing = settings.profile || {};
         const incoming = msg.profile || {};
         settings.profile = { ...existing };
@@ -296,28 +316,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             settings.profile[key] = val;
           }
         }
+
+        // Merge profileData: incoming values overwrite, empty values preserved from existing
         if (msg.profileData) {
           const existingPD = settings.profileData || {};
           settings.profileData = { ...existingPD };
           for (const [key, val] of Object.entries(msg.profileData)) {
-            if (val && (typeof val === "string" ? val.trim() : Array.isArray(val) ? val.length : val)) {
+            if (val !== null && val !== undefined && val !== "") {
               settings.profileData[key] = val;
             }
           }
         }
         await chrome.storage.local.set({ settings });
 
+        // Save to DB
         const session = await getSession();
         const userId = getUserId(session);
-        console.log("[Aburrido] SAVE_PROFILE — userId:", userId || "NOT SIGNED IN");
-        console.log("[Aburrido] SAVE_PROFILE — profileData phone:", settings.profileData?.phone);
         if (userId) {
-          // Use the merged profileData (not msg.profileData) so DB gets the full picture
           saveProfile(userId, settings.profile, settings.profileData || null)
-            .then(r => console.log("[Aburrido] SAVE_PROFILE DB success:", JSON.stringify(r)?.slice(0, 200)))
+            .then(() => console.log("[Aburrido] SAVE_PROFILE DB success"))
             .catch(e => console.error("SAVE_PROFILE DB error:", e.message));
-        } else {
-          console.warn("[Aburrido] SAVE_PROFILE — skipped DB save, not signed in");
         }
         sendResponse({ ok: true });
         break;
@@ -326,21 +344,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case "PROCESS_PROFILE": {
         const data = await chrome.storage.local.get("settings");
         const settings = data.settings || DEFAULT_SETTINGS;
-        if (!settings.apiKey) { sendResponse({ error: "No API key" }); break; }
+        if (!(settings.apiKeys?.[settings.aiProvider] || settings.apiKey)) { sendResponse({ error: "No API key" }); break; }
         if (!settings.profile?.rawText) { sendResponse({ error: "No profile scanned" }); break; }
         try {
-          const factSheet = await extractProfileFacts(settings.apiKey, settings.profile);
-          settings.profileData = factSheet;
+          const factSheet = await extractProfileFacts(settings.profile);
+          // Merge factSheet into existing profileData — preserve fields Claude doesn't return
+          // (resumeFileName, resumeUploadedAt, resumeText, phone, email, etc.)
+          const existingPD = settings.profileData || {};
+          settings.profileData = { ...existingPD };
+          for (const [key, val] of Object.entries(factSheet)) {
+            if (val !== null && val !== undefined && val !== "") {
+              settings.profileData[key] = val;
+            }
+          }
           await chrome.storage.local.set({ settings });
 
           const session = await getSession();
           const userId = getUserId(session);
           if (userId) {
-            saveProfile(userId, settings.profile, factSheet).catch(e => {
+            saveProfile(userId, settings.profile, settings.profileData).catch(e => {
               console.error("PROCESS_PROFILE DB error:", e.message);
             });
           }
-          sendResponse({ ok: true, profileData: factSheet });
+          sendResponse({ ok: true, profileData: settings.profileData });
         } catch (e) {
           sendResponse({ error: e.message });
         }
@@ -538,6 +564,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
       }
 
+      case "GET_AI_QUERY_LOGS": {
+        const session = await getSession();
+        const userId = getUserId(session);
+        if (!userId) { sendResponse({ logs: [] }); break; }
+        try {
+          const logs = await getAIQueryLogs(userId, msg.limit || 500);
+          sendResponse({ logs });
+        } catch (e) {
+          sendResponse({ logs: [], error: e.message });
+        }
+        break;
+      }
+
+      case "GET_ALL_APPLICATION_ANSWERS": {
+        const session = await getSession();
+        const userId = getUserId(session);
+        if (!userId || !msg.appIds?.length) {
+          sendResponse({ answers: [] });
+          break;
+        }
+        try {
+          const answers = await getAllApplicationAnswers(msg.appIds);
+          sendResponse({ answers });
+        } catch (e) {
+          sendResponse({ answers: [], error: e.message });
+        }
+        break;
+      }
+
       case "DELETE_APPLICATION": {
         // Delete from DB if signed in
         const session = await getSession();
@@ -556,6 +611,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const updated = localApps.filter(a => (a.jobId || a.job_id) !== jobId);
         await chrome.storage.local.set({ applications: updated });
         sendResponse({ ok: true });
+        break;
+      }
+
+      case "EXTRACT_RESUME_PDF": {
+        const promptText = "Extract ALL text from this resume/CV document. Return the full text content exactly as written, preserving structure (sections, bullet points, dates). Do not summarize or omit anything.";
+        try {
+          const text = await callAI({
+            prompt: promptText,
+            maxTokens: 4096,
+            documentBase64: msg.base64,
+            documentMimeType: "application/pdf",
+          });
+          logAIQuery("resume_extraction", `Extract text from PDF: ${msg.fileName}`, text.slice(0, 3000));
+          sendResponse({ text });
+        } catch (e) {
+          sendResponse({ error: e.message });
+        }
         break;
       }
 
@@ -578,6 +650,102 @@ function getUserId(session) {
   return session?.user?.id || session?.user?.sub || null;
 }
 
+// ── Unified AI call — routes to the active provider ──────────────────────────
+async function callAI({ prompt, maxTokens = 1024, documentBase64 = null, documentMimeType = null }) {
+  const { settings } = await chrome.storage.local.get("settings");
+  const provider = settings.aiProvider || "anthropic";
+  const apiKey = settings.apiKeys?.[provider] || settings.apiKey;
+  if (!apiKey) throw new Error("No API key configured");
+
+  if (provider === "gemini") {
+    const parts = [];
+    if (documentBase64 && documentMimeType) {
+      parts.push({ inline_data: { mime_type: documentMimeType, data: documentBase64 } });
+    }
+    parts.push({ text: prompt });
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: { maxOutputTokens: maxTokens },
+        }),
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Gemini API error ${res.status}`);
+    }
+    const data = await res.json();
+    if (data.candidates?.[0]?.finishReason === "SAFETY") throw new Error("Gemini blocked this request (safety filter)");
+    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+
+  } else if (provider === "openai") {
+    if (documentBase64) throw new Error("PDF extraction is not supported with OpenAI. Please use Anthropic or Gemini.");
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: maxTokens,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `OpenAI API error ${res.status}`);
+    }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content?.trim() || "";
+
+  } else {
+    // Anthropic (default)
+    const content = [];
+    if (documentBase64 && documentMimeType) {
+      content.push({ type: "document", source: { type: "base64", media_type: documentMimeType, data: documentBase64 } });
+    }
+    content.push({ type: "text", text: prompt });
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: maxTokens,
+        messages: [{ role: "user", content: content.length === 1 ? prompt : content }],
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Anthropic API error ${res.status}`);
+    }
+    const data = await res.json();
+    return data.content?.[0]?.text?.trim() || "";
+  }
+}
+
+// Helper: get the active API key
+function getActiveApiKey(settings) {
+  return settings.apiKeys?.[settings.aiProvider] || settings.apiKey || "";
+}
+
+// ── AI query logging helper ───────────────────────────────────────────────────
+async function logAIQuery(queryType, prompt, answer, extra = {}) {
+  try {
+    const session = await getSession();
+    const userId = getUserId(session);
+    if (!userId) return;
+    saveAIQueryLog(userId, { queryType, prompt, answer, ...extra })
+      .catch(e => console.error("[Aburrido] AI log error:", e.message));
+  } catch {}
+}
+
 // ── Local storage helpers ─────────────────────────────────────────────────────
 async function localApps() {
   const data = await chrome.storage.local.get("applications");
@@ -591,7 +759,7 @@ async function saveLocalApp(application) {
   await chrome.storage.local.set({ applications: apps });
 }
 
-// ── Local Q&A storage (works without Supabase / sign-in) ─────────────────────
+// ── Local Q&A storage (works without Supabase / sign-in) ────────────────────��
 function hashQ(text) {
   const s = text.toLowerCase().replace(/\s+/g, ' ').trim();
   let h = 5381;
@@ -643,7 +811,7 @@ async function updateLocalQuestion(questionHash, answer, needsReview) {
 }
 
 // ── Extract structured fact sheet from LinkedIn profile ───────────────────────
-async function extractProfileFacts(apiKey, profile) {
+async function extractProfileFacts(profile) {
   const rawText = [
     profile.rawText || "",
     profile.experience || "",
@@ -682,33 +850,16 @@ JSON structure to fill (use empty string if not found, never guess):
 LinkedIn Profile:
 ${rawText}`;
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1500,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-  if (!response.ok) {
-    const errBody = await response.json().catch(() => ({}));
-    throw new Error(`API error: ${response.status} — ${errBody?.error?.message || "unknown"}`);
-  }
-  const data = await response.json();
-  const text = data.content?.[0]?.text?.trim() || "{}";
-  return JSON.parse(text.replace(/```json|```/g, "").trim());
+  const text = await callAI({ prompt, maxTokens: 1500 });
+  logAIQuery("profile_extraction", prompt.slice(0, 3000), text.slice(0, 3000));
+  return JSON.parse((text || "{}").replace(/```json|```/g, "").trim());
 }
 
 // ── Answer a single form question ─────────────────────────────────────────────
-async function askClaude(apiKey, profile, question, fieldType, options) {
+async function askAI(question, fieldType, options) {
   const data = await chrome.storage.local.get("settings");
   const profileData = data.settings?.profileData;
+  const profile = data.settings?.profile;
 
   const factSheet = profileData
     ? `Candidate Fact Sheet (pre-extracted, highly accurate):\n${JSON.stringify(profileData, null, 2)}`
@@ -717,7 +868,7 @@ async function askClaude(apiKey, profile, question, fieldType, options) {
       : "No profile available.";
 
   const fieldGuide = fieldType === "number"
-    ? "Return ONLY a plain number with no text, symbols, or units (e.g. 95000). If not clearly stated in the profile, return 0."
+    ? "Return ONLY a plain number with no text, symbols, or units (e.g. 5, 95000), If nothing similar or has same meaning or related stated in the profile, return 0."
     : fieldType === "select"
     ? `Return ONLY one of these options exactly as written, nothing else: ${options.join(", ")}`
     : fieldType === "boolean"
@@ -733,45 +884,32 @@ ${factSheet}
 ------------------------
 
 INSTRUCTIONS:
-- Answer based ONLY on the provided context. Do NOT invent or assume missing information.
-- If the answer is not available in the context, return an empty string "" — never write "N/A", "I don't know", or any explanation.
+- Answer using the provided context. Use reasoning and inference — do NOT only look for exact keyword matches.
+- For "years of experience with X" questions: INFER from the candidate's job history, skills, and technologies.
+  Example: If the candidate has 10 years as a software engineer using .NET, C#, JavaScript, React — they have ~10 years of Web Development experience, even if "Web Development" is not explicitly listed.
+  Example: If the candidate lists "SQL Server" experience for 8 years, they have ~8 years of "Database" or "SQL" experience.
+  Always round to a reasonable estimate based on career history. NEVER return 0 if the candidate clearly has relevant experience.
+- For numeric questions: return only the number. If experience is clearly present but years aren't specified, estimate conservatively from job history. Only return 0 if the candidate truly has NO relevant experience.
+- If the answer is genuinely not available in the context, return an empty string "" — never write "N/A", "I don't know", or any explanation.
 - Keep answers natural and human-like. Prefer first-person ("I") responses.
-- Avoid buzzwords unless they appear in the context.
 - For yes/no questions: answer "Yes" or "No" only if confident; otherwise return "".
-- For numeric questions: return only the number if clearly known; otherwise return "0".
 - For open-ended questions: tailor the response using relevant skills and experience from the context.
 - ${fieldGuide}
 
 Field: "${question}"
 Your answer (the value only, nothing else):`;
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 150,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-  if (!response.ok) {
-    const errBody = await response.json().catch(() => ({}));
-    throw new Error(`API error: ${response.status} — ${errBody?.error?.message || "unknown"}`);
-  }
-  const result = await response.json();
-  const raw = result.content?.[0]?.text?.trim() || "";
+  const raw = await callAI({ prompt, maxTokens: 150 });
 
   // If Claude explains it doesn't have the info instead of answering, treat as empty
-  if (/\b(do(n'?t| not) have|not (provided|available|found|listed|specified|on file|in my profile)|no .{0,20} (on file|provided|available)|unable to (provide|answer|determine)|not in (the |my )?profile|cannot find|no information|isn'?t (listed|available|provided)|based on (the |my )?context|context (does not|doesn'?t)|not (mentioned|included|stated)|cannot (confirm|determine))\b/i.test(raw)) {
-    return "";
-  }
+  const filtered = /\b(do(n'?t| not) have|not (provided|available|found|listed|specified|on file|in my profile)|no .{0,20} (on file|provided|available)|unable to (provide|answer|determine)|not in (the |my )?profile|cannot find|no information|isn'?t (listed|available|provided)|based on (the |my )?context|context (does not|doesn'?t)|not (mentioned|included|stated)|cannot (confirm|determine))\b/i.test(raw);
+  const finalAnswer = filtered ? "" : raw;
 
-  return raw;
+  logAIQuery("form_answer", prompt.slice(0, 3000), finalAnswer || `[filtered: ${raw}]`, {
+    question, fieldType, jobTitle: question,
+  });
+
+  return finalAnswer;
 }
 
 // Hourly keepalive
@@ -781,14 +919,15 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // ── Application scoring ───────────────────────────────────────────────────────
-async function scoreApplication(apiKey, settings, jobTitle, company, jobDescription) {
-  const pd = settings?.profileData;
-  if (!pd && !settings?.profile?.rawText) return null;
+async function scoreApplication(jobTitle, company, jobDescription) {
+  const { settings: sv } = await chrome.storage.local.get("settings");
+  const pd = sv?.profileData;
+  if (!pd && !sv?.profile?.rawText) return null;
   if (!jobDescription || jobDescription.length < 50) return null;
 
   const factSheet = pd
     ? `Title: ${pd.currentTitle || ""}\nExp: ${pd.totalYearsExperience || 0}yr\nSkills: ${(pd.skills || []).slice(0, 25).join(", ")}\nTech exp: ${JSON.stringify(pd.yearsExperienceByTech || {})}`
-    : (settings?.profile?.rawText || "").slice(0, 1500);
+    : (sv?.profile?.rawText || "").slice(0, 1500);
   const prompt = `Score this candidate 0-100% for the role and list ONLY truly missing skills.
 
 CANDIDATE:
@@ -816,19 +955,9 @@ Respond ONLY with valid JSON (no markdown):
 score = 0–100 percentage match (100=perfect). missing_skills = only truly missing skills the candidate lacks (3–6 max, concise skill names).`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 150, messages: [{ role: "user", content: prompt }] }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const text = (data.content?.[0]?.text || "").trim().replace(/```(?:json)?|```/g, "");
+    const raw = await callAI({ prompt, maxTokens: 150 });
+    const text = (raw || "").replace(/```(?:json)?|```/g, "");
+    logAIQuery("job_scoring", prompt.slice(0, 3000), text, { jobTitle, company });
     return JSON.parse(text);
   } catch { return null; }
 }
@@ -836,7 +965,7 @@ score = 0–100 percentage match (100=perfect). missing_skills = only truly miss
 // ── Deduplicate missing skills using LLM ──────────────────────────────────────
 // Given new skills from scoring and existing skills already in DB, ask Claude
 // to remove duplicates/equivalents and normalize names.
-async function deduplicateSkills(apiKey, newSkills, existingSkills) {
+async function deduplicateSkills(newSkills, existingSkills) {
   if (!newSkills?.length) return [];
   if (!existingSkills?.length) return newSkills; // nothing to dedup against
 
@@ -858,19 +987,9 @@ Respond ONLY with a JSON array of truly new, normalized skill names. Example: ["
 If all are duplicates, respond with: []`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 150, messages: [{ role: "user", content: prompt }] }),
-    });
-    if (!res.ok) return newSkills; // fallback: insert all
-    const data = await res.json();
-    const text = (data.content?.[0]?.text || "").trim().replace(/```(?:json)?|```/g, "");
+    const raw = await callAI({ prompt, maxTokens: 150 });
+    const text = (raw || "").replace(/```(?:json)?|```/g, "");
+    logAIQuery("skill_dedup", prompt.slice(0, 3000), text);
     const result = JSON.parse(text);
     return Array.isArray(result) ? result : newSkills;
   } catch {

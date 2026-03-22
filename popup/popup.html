@@ -330,6 +330,20 @@
   </div>
 </div>
 
+<div class="section" style="padding-bottom:8px">
+  <div class="section-title">AI Provider</div>
+  <select id="aiProvider" style="width:100%;padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:11px;margin-bottom:8px;cursor:pointer">
+    <option value="anthropic">Anthropic Claude</option>
+    <option value="gemini">Google Gemini (Free Tier)</option>
+    <option value="openai">OpenAI GPT</option>
+  </select>
+  <div class="api-field">
+    <input type="password" class="api-input" id="apiKey" placeholder="sk-ant-api03-...">
+    <button class="save-btn" id="saveBtn">Save</button>
+  </div>
+  <div id="providerHint" style="font-size:10px;color:var(--muted);margin-top:4px"></div>
+</div>
+
 <div class="main-control">
   <button class="toggle-btn start" id="toggleBtn">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
@@ -376,14 +390,6 @@
   </div>
   <button class="save-btn" id="scanProfileBtn" style="width:100%;padding:7px">Scan LinkedIn Profile</button>
   <div id="scanProgress" style="font-size:10px;color:var(--muted);margin-top:5px;min-height:14px"></div>
-</div>
-
-<div class="section">
-  <div class="section-title">Claude AI API Key</div>
-  <div class="api-field">
-    <input type="password" class="api-input" id="apiKey" placeholder="sk-ant-api03-...">
-    <button class="save-btn" id="saveBtn">Save</button>
-  </div>
 </div>
 
 <div class="section" id="pendingSection" style="display:none">

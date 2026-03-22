@@ -68,7 +68,14 @@ async function init() {
   updateProfileStatus(settings.profile);
   setToggle("toggleSponsorship", settings.requiresSponsorship === true);
   document.getElementById("sponsorshipLabel").textContent = settings.requiresSponsorship ? "Yes" : "No";
-  document.getElementById("apiKey").value = settings.apiKey || "";
+  // AI Provider
+  const provider = settings.aiProvider || "anthropic";
+  document.getElementById("aiProvider").value = provider;
+  if (!settings.apiKeys) settings.apiKeys = { anthropic: "", gemini: "", openai: "" };
+  // Migrate old apiKey
+  if (settings.apiKey && !settings.apiKeys.anthropic) settings.apiKeys.anthropic = settings.apiKey;
+  document.getElementById("apiKey").value = settings.apiKeys[provider] || settings.apiKey || "";
+  updateProviderHint(provider);
   isRunning = settings.autopilot || false;
 
   // Platform toggles
@@ -204,12 +211,39 @@ function setToggle(id, active) {
 }
 
 // ── Save settings ──────────────────────────────────────────────────────────
+// Provider switching
+const providerPlaceholders = {
+  anthropic: "sk-ant-api03-...",
+  gemini: "AIzaSy...",
+  openai: "sk-...",
+};
+const providerHints = {
+  anthropic: 'Get your key at <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--accent)">console.anthropic.com</a>',
+  gemini: 'Free tier — get key at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">aistudio.google.com</a>',
+  openai: 'Get your key at <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--accent)">platform.openai.com</a>',
+};
+function updateProviderHint(provider) {
+  document.getElementById("apiKey").placeholder = providerPlaceholders[provider] || "";
+  document.getElementById("providerHint").innerHTML = providerHints[provider] || "";
+}
+document.getElementById("aiProvider").addEventListener("change", (e) => {
+  const provider = e.target.value;
+  updateProviderHint(provider);
+  // Switch displayed key to the selected provider's key
+  if (!settings.apiKeys) settings.apiKeys = { anthropic: "", gemini: "", openai: "" };
+  document.getElementById("apiKey").value = settings.apiKeys[provider] || "";
+});
+
 document.getElementById("saveBtn").addEventListener("click", async () => {
+  const provider = document.getElementById("aiProvider").value;
   const apiKey = document.getElementById("apiKey").value.trim();
   const dailyLimit = parseInt(document.getElementById("dailyLimit").value) || 40;
   const minSalary = parseInt(document.getElementById("minSalary").value) || 0;
 
-  settings.apiKey = apiKey;
+  settings.aiProvider = provider;
+  if (!settings.apiKeys) settings.apiKeys = { anthropic: "", gemini: "", openai: "" };
+  settings.apiKeys[provider] = apiKey;
+  settings.apiKey = apiKey; // backward compat
   settings.dailyLimit = dailyLimit;
   settings.minSalary = minSalary;
   settings.city = document.getElementById("city").value.trim();

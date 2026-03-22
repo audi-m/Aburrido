@@ -608,17 +608,30 @@
         }
 
         trackAnswer(question, options.find(o => o.value === chosen)?.text || chosen, "select");
+        AI.log(PLATFORM, `Select "${question}" → "${chosen}"`);
         el.focus();
+
+        // Try multiple approaches to set select value (shadow DOM compatibility)
         try {
           const nativeSelectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
           if (nativeSelectSetter) nativeSelectSetter.call(el, chosen); else el.value = chosen;
         } catch { el.value = chosen; }
-        el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true }));
-        el.dispatchEvent(new Event("input",           { bubbles: true }));
-        el.dispatchEvent(new KeyboardEvent("keyup",   { bubbles: true }));
-        el.dispatchEvent(new Event("change",          { bubbles: true }));
-        el.dispatchEvent(new Event("blur",            { bubbles: true }));
+        el.dispatchEvent(new Event("input",  { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        el.dispatchEvent(new Event("blur",   { bubbles: true }));
         await AI.delay(300, 500);
+
+        // Verify the value stuck — if not, try setting selectedIndex directly
+        if (el.value !== chosen || el.value === "Select an option") {
+          AI.log(PLATFORM, `Select value didn't stick ("${el.value}"), trying selectedIndex`, "warn");
+          const idx = [...el.options].findIndex(o => o.value === chosen);
+          if (idx >= 0) {
+            el.selectedIndex = idx;
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+            el.dispatchEvent(new Event("blur",   { bubbles: true }));
+            await AI.delay(300, 500);
+          }
+        }
 
       // ── Radio ──
       } else if (el.type === "radio") {

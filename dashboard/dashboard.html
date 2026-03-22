@@ -86,6 +86,20 @@
     border-radius: 12px; padding: 20px;
   }
   .card-title { font-size: 13px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+  /* Onboarding */
+  .onboarding-step {
+    display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px;
+    background: var(--surface2); border-radius: 8px; transition: opacity 0.3s;
+  }
+  .onboarding-step.done { opacity: 0.5; }
+  .onboarding-check {
+    font-size: 16px; line-height: 1; min-width: 20px; text-align: center;
+    color: var(--muted); font-weight: 700;
+  }
+  .onboarding-check.completed { color: var(--green); }
+  .onboarding-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .onboarding-desc { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+
   .bar-chart { display: flex; align-items: flex-end; gap: 6px; height: 80px; }
   .bar-day { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .bar-fill {
@@ -412,6 +426,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         Skills Gap
       </div>
+      <div class="nav-item" id="navAILog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        AI Answers
+      </div>
     </nav>
     <div class="sidebar-stats">
       <div class="mini-stat">
@@ -440,6 +458,49 @@
     </div>
 
     <div id="dashboardPanel">
+
+    <!-- Getting Started -->
+    <div id="onboardingCard" class="card" style="display:none;margin-bottom:20px;border:1px solid var(--green);background:linear-gradient(135deg, var(--card), #0a1a12)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--text)">Welcome to Aburrido AI</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">Complete these steps to start auto-applying</div>
+        </div>
+        <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--green)" id="onboardingProgress">0/5</div>
+      </div>
+      <div id="onboardingSteps" style="display:flex;flex-direction:column;gap:10px">
+        <div class="onboarding-step" data-step="apiKey">
+          <div class="onboarding-check" id="checkApiKey">○</div>
+          <div>
+            <div class="onboarding-title">Add API Key</div>
+            <div class="onboarding-desc">Open the extension popup and paste your Anthropic API key</div>
+          </div>
+        </div>
+        <div class="onboarding-step" data-step="profile">
+          <div class="onboarding-check" id="checkProfile">○</div>
+          <div>
+            <div class="onboarding-title">Scan LinkedIn Profile</div>
+            <div class="onboarding-desc">Go to your <a href="https://www.linkedin.com/in/me" target="_blank" style="color:var(--green)">LinkedIn profile</a>, open the extension popup, and click "Scan Profile"</div>
+          </div>
+        </div>
+        <div class="onboarding-step" data-step="resume">
+          <div class="onboarding-check" id="checkResume">○</div>
+          <div>
+            <div class="onboarding-title">Upload Resume</div>
+            <div class="onboarding-desc">Go to the Profile tab and upload your resume (PDF or TXT)</div>
+          </div>
+        </div>
+        <div class="onboarding-step" data-step="contactInfo">
+          <div class="onboarding-check" id="checkContact">○</div>
+          <div>
+            <div class="onboarding-title">Fill Contact Info</div>
+            <div class="onboarding-desc">Go to Profile tab — add phone number, email, and location</div>
+          </div>
+        </div>
+      </div>
+      <button id="onboardingDismiss" style="margin-top:14px;background:none;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer">Dismiss</button>
+    </div>
+
     <div class="page-header">
       <h2>Application Dashboard</h2>
       <p id="dateLabel">Loading...</p>
@@ -470,7 +531,7 @@
 
     <div class="chart-row">
       <div class="card">
-        <div class="card-title">Applications — Last 7 Days</div>
+        <div class="card-title" id="barChartTitle">Applications — Last 7 Days</div>
         <div class="bar-chart" id="barChart"></div>
       </div>
       <div class="card">
@@ -580,6 +641,43 @@
       </div>
     </div><!-- /skillsPanel -->
 
+    <!-- AI Answers Log Panel -->
+    <div id="aiLogPanel" style="display:none">
+      <div class="page-header">
+        <h2>AI Answers Log</h2>
+        <p>Questions asked to Claude and the answers returned during job applications</p>
+      </div>
+      <div class="card">
+        <div class="table-header">
+          <div class="table-title">All AI Answers</div>
+          <div class="filter-row">
+            <button class="ailog-filter-btn active" data-ailog-filter="all">All</button>
+            <button class="ailog-filter-btn" data-ailog-filter="form_answer">Form Answers</button>
+            <button class="ailog-filter-btn" data-ailog-filter="job_scoring">Job Scoring</button>
+            <button class="ailog-filter-btn" data-ailog-filter="profile_extraction">Profile</button>
+            <button class="ailog-filter-btn" data-ailog-filter="skill_dedup">Skill Dedup</button>
+            <button class="ailog-filter-btn" data-ailog-filter="bad">Bad Answers</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Job</th>
+              <th>Prompt / Question</th>
+              <th>AI Response</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="aiLogTableBody"></tbody>
+        </table>
+        <div id="aiLogEmpty" class="empty-state" style="display:none;text-align:center;padding:40px;color:var(--muted)">
+          No AI answers recorded yet. Run autopilot to generate answers.
+        </div>
+        <div class="pagination" id="aiLogPagination"></div>
+      </div>
+    </div><!-- /aiLogPanel -->
+
     <!-- Profile Panel -->
     <div id="profilePanel" style="display:none">
       <div class="page-header">
@@ -645,6 +743,21 @@
               <input type="url" class="profile-input" id="profPortfolio" placeholder="https://...">
             </div>
           </div>
+        </div>
+
+        <!-- Resume Upload -->
+        <div class="card profile-section">
+          <div class="card-title">Resume <span style="font-size:11px;color:var(--muted);font-weight:400">(PDF or TXT — extracted text is added to your fact sheet)</span></div>
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <label style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;background:var(--surface2);border:1px dashed var(--border);border-radius:8px;cursor:pointer;font-size:12px;color:var(--text)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Upload Resume
+              <input type="file" id="resumeFileInput" accept=".pdf,.txt,.doc,.docx" style="display:none">
+            </label>
+            <span id="resumeFileName" style="font-size:12px;color:var(--muted)">No resume uploaded</span>
+          </div>
+          <div id="resumeProgress" style="display:none;margin-top:10px;font-size:12px;color:var(--green)"></div>
+          <div id="resumePreview" style="display:none;margin-top:12px;max-height:200px;overflow-y:auto;padding:10px;background:var(--surface2);border-radius:8px;font-size:11px;color:var(--muted);white-space:pre-wrap;font-family:var(--mono)"></div>
         </div>
 
         <!-- Summary -->

@@ -89,8 +89,9 @@ async function initDashboard() {
 
   renderStats(stats);
   renderBarChart(stats.recentApps || []);
-  renderPlatformSplit(stats);
   allApps = stats.recentApps || [];
+  renderPlatformSplit(stats);
+  renderOnboarding();
   renderTable();
 
   // Auto-refresh stats every 10s
@@ -135,20 +136,89 @@ function renderStats(stats) {
 
 function renderBarChart(apps) {
   const chart = document.getElementById("barChart");
-  const days = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const label = d.toLocaleDateString("en-US", { weekday: "short" });
-    const dateStr = d.toDateString();
-    const count = apps.filter(a => new Date(a.appliedAt).toDateString() === dateStr).length;
-    days.push({ label, count });
+  const titleEl = document.getElementById("barChartTitle");
+  if (!apps.length) {
+    titleEl.textContent = "Applications";
+    chart.innerHTML = `<div style="color:var(--muted);font-size:12px;text-align:center;width:100%;padding:20px 0">No applications yet</div>`;
+    return;
   }
-  const max = Math.max(...days.map(d => d.count), 1);
-  chart.innerHTML = days.map(d => `
+
+  // Find the oldest application to determine the time range
+  const now = new Date();
+  const oldest = new Date(Math.min(...apps.map(a => new Date(a.appliedAt).getTime())));
+  const daysSinceOldest = Math.ceil((now - oldest) / (1000 * 60 * 60 * 24));
+
+  let buckets, titleText;
+
+  if (daysSinceOldest <= 7) {
+    // 7 days — daily buckets
+    titleText = "Applications — Last 7 Days";
+    buckets = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const dateStr = d.toDateString();
+      buckets.push({
+        label: d.toLocaleDateString("en-US", { weekday: "short" }),
+        count: apps.filter(a => new Date(a.appliedAt).toDateString() === dateStr).length,
+      });
+    }
+  } else if (daysSinceOldest <= 30) {
+    // 1 month — daily buckets
+    const numDays = Math.min(daysSinceOldest, 30);
+    titleText = `Applications — Last ${numDays} Days`;
+    buckets = [];
+    for (let i = numDays - 1; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const dateStr = d.toDateString();
+      buckets.push({
+        label: d.getDate().toString(),
+        count: apps.filter(a => new Date(a.appliedAt).toDateString() === dateStr).length,
+      });
+    }
+  } else if (daysSinceOldest <= 180) {
+    // Up to 6 months — weekly buckets
+    const numWeeks = Math.min(Math.ceil(daysSinceOldest / 7), 26);
+    titleText = `Applications — Last ${numWeeks} Weeks`;
+    buckets = [];
+    for (let i = numWeeks - 1; i >= 0; i--) {
+      const weekEnd = new Date(); weekEnd.setDate(weekEnd.getDate() - i * 7);
+      const weekStart = new Date(weekEnd); weekStart.setDate(weekStart.getDate() - 6);
+      buckets.push({
+        label: weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        count: apps.filter(a => {
+          const d = new Date(a.appliedAt);
+          return d >= weekStart && d <= weekEnd;
+        }).length,
+      });
+    }
+  } else {
+    // 1 year+ — monthly buckets
+    const numMonths = Math.min(Math.ceil(daysSinceOldest / 30), 12);
+    titleText = `Applications — Last ${numMonths} Months`;
+    buckets = [];
+    for (let i = numMonths - 1; i >= 0; i--) {
+      const d = new Date(); d.setMonth(d.getMonth() - i);
+      const month = d.getMonth();
+      const year = d.getFullYear();
+      buckets.push({
+        label: d.toLocaleDateString("en-US", { month: "short" }),
+        count: apps.filter(a => {
+          const ad = new Date(a.appliedAt);
+          return ad.getMonth() === month && ad.getFullYear() === year;
+        }).length,
+      });
+    }
+  }
+
+  titleEl.textContent = titleText;
+  const max = Math.max(...buckets.map(d => d.count), 1);
+  // If too many buckets, hide some labels to avoid overlap
+  const showEvery = buckets.length > 15 ? Math.ceil(buckets.length / 10) : 1;
+  chart.innerHTML = buckets.map((d, i) => `
     <div class="bar-day">
-      <div class="bar-fill" style="height:${Math.max(4, (d.count / max) * 70)}px" title="${d.count} applications"></div>
-      <div class="bar-label">${d.label}</div>
+      <div style="font-size:9px;color:var(--text);font-family:var(--mono);margin-bottom:2px;min-height:12px">${d.count || ""}</div>
+      <div class="bar-fill" style="height:${Math.max(2, (d.count / max) * 70)}px" title="${d.count} applications — ${d.label}"></div>
+      <div class="bar-label" style="visibility:${i % showEvery === 0 ? "visible" : "hidden"}">${d.label}</div>
     </div>
   `).join("");
 }
@@ -295,6 +365,60 @@ function renderTable() {
     btn.addEventListener("click", () => { currentPage = parseInt(btn.dataset.p); renderTable(); });
   });
 }
+
+// ── Onboarding ────────────────────────────────────────────────────────────────
+async function renderOnboarding() {
+  const card = document.getElementById("onboardingCard");
+  if (!card) return;
+
+  // Check if user dismissed onboarding
+  const { onboardingDismissed } = await new Promise(r => chrome.storage.local.get("onboardingDismissed", r));
+  if (onboardingDismissed) { card.style.display = "none"; return; }
+
+  const settings = await getSettings();
+  const pd = settings.profileData || {};
+  const profile = settings.profile || {};
+
+  const steps = {
+    apiKey: !!settings.apiKey,
+    profile: !!(profile.rawText && profile.rawText.length > 100),
+    resume: !!pd.resumeFileName,
+    contactInfo: !!(pd.phone && pd.email),
+  };
+
+  const done = Object.values(steps).filter(Boolean).length;
+  const total = Object.keys(steps).length;
+
+  // If all done, hide onboarding
+  if (done === total) { card.style.display = "none"; return; }
+
+  // Show card
+  card.style.display = "";
+  document.getElementById("onboardingProgress").textContent = `${done}/${total}`;
+
+  // Update each step
+  const checkIdMap = { apiKey: "checkApiKey", profile: "checkProfile", resume: "checkResume", contactInfo: "checkContact" };
+  for (const [key, completed] of Object.entries(steps)) {
+    const checkEl = document.getElementById(checkIdMap[key]);
+    const stepEl = checkEl?.closest(".onboarding-step");
+    if (checkEl) {
+      checkEl.textContent = completed ? "✓" : "○";
+      checkEl.classList.toggle("completed", completed);
+    }
+    if (stepEl) stepEl.classList.toggle("done", completed);
+  }
+}
+
+// Map step IDs to check element IDs
+const onboardingCheckMap = {
+  apiKey: "checkApiKey", profile: "checkProfile", resume: "checkResume",
+  contactInfo: "checkContact", autopilot: "checkAutopilot"
+};
+
+document.getElementById("onboardingDismiss")?.addEventListener("click", () => {
+  chrome.storage.local.set({ onboardingDismissed: true });
+  document.getElementById("onboardingCard").style.display = "none";
+});
 
 // ── Q&A tab ───────────────────────────────────────────────────────────────────
 function updateQABadge() {
@@ -580,7 +704,7 @@ async function loadQATab() {
   updateQABadge();
 }
 
-// ── Profile tab ─────────────────────────────────────────────────────────────
+// ── Profile tab ───────────────��────────────────────��────────────────────────
 let profileSkills = [];
 
 async function loadProfileTab() {
@@ -617,6 +741,16 @@ async function loadProfileTab() {
   document.getElementById("profMilitary").value = pd.militaryStatus || "";
   document.getElementById("profDisability").value = pd.disabilityStatus || "";
   document.getElementById("profNationality").value = pd.nationality || "";
+
+  // Resume
+  const resumeNameEl = document.getElementById("resumeFileName");
+  if (pd.resumeFileName && pd.resumeUploadedAt) {
+    const date = new Date(pd.resumeUploadedAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    resumeNameEl.innerHTML = `<span style="color:var(--green)">✓ ${pd.resumeFileName}</span> <span style="color:var(--muted)">— uploaded ${date}</span>`;
+  } else {
+    resumeNameEl.textContent = "No resume uploaded";
+    resumeNameEl.style.color = "var(--muted)";
+  }
 
   // Skills
   profileSkills = [...(pd.skills || [])];
@@ -701,6 +835,98 @@ async function saveProfileFromDashboard() {
   setTimeout(() => { badge.style.display = "none"; }, 2000);
 }
 
+// ── AI Answers Log tab ───────────────────────────────────────────────────────
+let allAIAnswers = [];
+let aiLogFilter = "all";
+let aiLogPage = 1;
+const AI_LOG_PER_PAGE = 20;
+
+async function loadAILogTab() {
+  // Gather answers from all applications in a single batch query
+  allAIAnswers = [];
+
+  // Single query to ai_query_log table
+  try {
+    const { logs } = await new Promise(resolve =>
+      chrome.runtime.sendMessage({ type: "GET_AI_QUERY_LOGS", limit: 500 }, r => resolve(r || { logs: [] }))
+    );
+    allAIAnswers = (logs || []).map(l => ({
+      queryType: l.query_type || "form_answer",
+      prompt: l.prompt || "",
+      jobTitle: l.job_title || "–",
+      company: l.company || "",
+      date: l.created_time || "",
+      question: l.question || "",
+      answer: l.answer || "",
+      type: l.field_type || "text",
+      platform: l.platform || "",
+      fromCache: l.from_cache || false,
+    }));
+  } catch {}
+
+  aiLogPage = 1;
+  renderAILogTable();
+}
+
+function renderAILogTable() {
+  const filtered = aiLogFilter === "all"
+    ? allAIAnswers
+    : aiLogFilter === "bad"
+      ? allAIAnswers.filter(a => !a.answer || a.answer === "N/A" || a.answer.length < 2 || a.answer.startsWith("[filtered"))
+      : allAIAnswers.filter(a => a.queryType === aiLogFilter);
+
+  const totalPages = Math.ceil(filtered.length / AI_LOG_PER_PAGE);
+  const page = filtered.slice((aiLogPage - 1) * AI_LOG_PER_PAGE, aiLogPage * AI_LOG_PER_PAGE);
+  const tbody = document.getElementById("aiLogTableBody");
+  const empty = document.getElementById("aiLogEmpty");
+
+  if (!filtered.length) {
+    tbody.innerHTML = "";
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+
+  const typeLabels = { form_answer: "Form", job_scoring: "Scoring", profile_extraction: "Profile", skill_dedup: "Skills", resume_extraction: "Resume" };
+  const typeColors = { form_answer: "var(--green)", job_scoring: "var(--yellow)", profile_extraction: "#8b5cf6", skill_dedup: "#06b6d4", resume_extraction: "#f97316" };
+
+  tbody.innerHTML = page.map(a => {
+    const date = a.date ? new Date(a.date).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "–";
+    const answerClass = (!a.answer || a.answer === "N/A" || a.answer.length < 2 || a.answer.startsWith("[filtered")) ? "color:var(--red)" : "";
+    const typeLabel = typeLabels[a.queryType] || a.queryType || "–";
+    const typeColor = typeColors[a.queryType] || "var(--muted)";
+    const promptDisplay = a.prompt
+      ? `<details style="cursor:pointer"><summary style="font-size:11px;color:var(--muted)">${(a.question || a.prompt || "").slice(0, 80)}…</summary><pre style="white-space:pre-wrap;font-size:10px;color:var(--muted);max-height:200px;overflow:auto;margin-top:4px">${a.prompt}</pre></details>`
+      : `<span style="font-size:12px">${a.question || "–"}</span>`;
+    return `<tr>
+      <td style="padding:8px 12px;vertical-align:top"><span style="font-size:10px;font-weight:600;color:${typeColor};background:${typeColor}22;padding:2px 6px;border-radius:4px">${typeLabel}</span></td>
+      <td style="padding:8px 12px;font-size:12px;max-width:140px;vertical-align:top"><strong>${a.jobTitle || "–"}</strong><br><span style="color:var(--muted);font-size:11px">${a.company || ""}</span></td>
+      <td style="padding:8px 12px;font-size:12px;max-width:300px;vertical-align:top;line-height:1.4">${promptDisplay}</td>
+      <td style="padding:8px 12px;font-size:12px;max-width:250px;vertical-align:top;line-height:1.4;${answerClass}">${a.answer || "<em style='color:var(--muted)'>No answer</em>"}</td>
+      <td style="padding:8px 12px;vertical-align:top;white-space:nowrap;font-size:11px;color:var(--muted)">${date}</td>
+    </tr>`;
+  }).join("");
+
+  const pag = document.getElementById("aiLogPagination");
+  if (totalPages <= 1) { pag.innerHTML = ""; return; }
+  pag.innerHTML = Array.from({ length: totalPages }, (_, i) =>
+    `<button class="page-btn ${i + 1 === aiLogPage ? "active" : ""}" data-p="${i+1}">${i+1}</button>`
+  ).join("");
+  pag.querySelectorAll(".page-btn").forEach(btn => {
+    btn.addEventListener("click", () => { aiLogPage = parseInt(btn.dataset.p); renderAILogTable(); });
+  });
+}
+
+document.querySelectorAll(".ailog-filter-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".ailog-filter-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    aiLogFilter = btn.dataset.ailogFilter;
+    aiLogPage = 1;
+    renderAILogTable();
+  });
+});
+
 // ── Tab navigation ────────────────────────────────────────────────────────────
 function switchTab(navId) {
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
@@ -715,10 +941,12 @@ function switchTab(navId) {
   document.getElementById("dashboardPanel").style.display = navId === "navDash" || navId === "navHistory" ? "" : "none";
   document.getElementById("qaPanel").style.display = navId === "navQA" ? "" : "none";
   document.getElementById("skillsPanel").style.display = navId === "navSkills" ? "" : "none";
+  document.getElementById("aiLogPanel").style.display = navId === "navAILog" ? "" : "none";
   document.getElementById("profilePanel").style.display = navId === "navProfile" ? "" : "none";
 
   if (navId === "navQA") loadQATab();
   if (navId === "navSkills") loadSkillsTab();
+  if (navId === "navAILog") loadAILogTab();
   if (navId === "navProfile") loadProfileTab();
 }
 
@@ -728,12 +956,121 @@ document.querySelector(".nav-item.active")?.addEventListener("click", () => swit
 document.getElementById("navHistory")?.addEventListener("click", () => switchTab("navHistory"));
 document.getElementById("navQA")?.addEventListener("click", () => switchTab("navQA"));
 document.getElementById("navSkills")?.addEventListener("click", () => switchTab("navSkills"));
+document.getElementById("navAILog")?.addEventListener("click", () => switchTab("navAILog"));
 
 // Top bar user → opens profile panel
 document.getElementById("topbarUser")?.addEventListener("click", () => switchTab("navProfile"));
 
 // Profile save button
 document.getElementById("profSaveBtn")?.addEventListener("click", saveProfileFromDashboard);
+
+// Resume upload
+document.getElementById("resumeFileInput")?.addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const progress = document.getElementById("resumeProgress");
+  const nameEl = document.getElementById("resumeFileName");
+  const preview = document.getElementById("resumePreview");
+
+  nameEl.textContent = file.name;
+  nameEl.style.color = "var(--text)";
+  progress.style.display = "block";
+  progress.textContent = "Reading file…";
+
+  let resumeText = "";
+
+  if (file.name.endsWith(".txt")) {
+    resumeText = await file.text();
+  } else if (file.name.endsWith(".pdf")) {
+    // Read PDF as base64 and send to Claude for text extraction
+    progress.textContent = "Extracting text from PDF via AI";
+    let dots = 0;
+    const loadingInterval = setInterval(() => {
+      dots = (dots + 1) % 4;
+      progress.textContent = "Extracting text from PDF via AI" + ".".repeat(dots);
+    }, 500);
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      // Encode base64 in chunks to avoid call stack overflow on large files
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 8192) {
+        binary += String.fromCharCode(...bytes.slice(i, i + 8192));
+      }
+      const base64 = btoa(binary);
+      const result = await new Promise((resolve) => {
+        const timeout = setTimeout(() => resolve({ error: "Timeout — PDF extraction took too long" }), 60000);
+        chrome.runtime.sendMessage({ type: "EXTRACT_RESUME_PDF", base64, fileName: file.name }, r => {
+          clearTimeout(timeout);
+          resolve(r || { error: "No response from service worker" });
+        });
+      });
+      clearInterval(loadingInterval);
+      resumeText = result.text || "";
+      if (result.error) {
+        progress.textContent = `Error: ${result.error}`;
+        progress.style.color = "var(--red)";
+        return;
+      }
+    } catch (err) {
+      clearInterval(loadingInterval);
+      progress.textContent = `Error: ${err.message}`;
+      progress.style.color = "var(--red)";
+      return;
+    }
+  } else {
+    progress.textContent = "Unsupported file type. Use PDF or TXT.";
+    progress.style.color = "var(--red)";
+    return;
+  }
+
+  if (!resumeText.trim()) {
+    progress.textContent = "Could not extract text from file.";
+    progress.style.color = "var(--red)";
+    return;
+  }
+
+  // Save extracted text to profileData — write to local storage directly to avoid race conditions
+  const settings = await getSettings();
+  const pd = settings.profileData || {};
+  pd.resumeText = resumeText.trim();
+  pd.resumeFileName = file.name;
+  pd.resumeUploadedAt = new Date().toISOString();
+  settings.profileData = pd;
+
+  // Also merge resume text into the raw profile for richer context
+  settings.profile = settings.profile || {};
+  settings.profile.rawText = (settings.profile.rawText || "") + "\n\n--- RESUME ---\n" + resumeText.trim();
+
+  // Save to local storage first, wait for it to complete
+  await new Promise(resolve => chrome.storage.local.set({ settings }, resolve));
+  // Then save to DB — pass the full merged data
+  await saveProfileToDB(settings.profile, pd);
+
+  // Re-process profile with AI to update fact sheet with resume data
+  progress.textContent = "Updating fact sheet with resume data…";
+  try {
+    const processed = await processProfile();
+    if (processed.ok) {
+      progress.textContent = `✓ Resume uploaded and fact sheet updated`;
+      progress.style.color = "var(--green)";
+    } else {
+      progress.textContent = `✓ Resume saved (fact sheet update failed: ${processed.error || "unknown"})`;
+      progress.style.color = "var(--yellow)";
+    }
+  } catch {
+    progress.textContent = "✓ Resume saved (fact sheet update skipped — no API key?)";
+    progress.style.color = "var(--yellow)";
+  }
+
+  // Show preview
+  preview.textContent = resumeText.slice(0, 2000) + (resumeText.length > 2000 ? "\n…" : "");
+  preview.style.display = "block";
+
+  // Reload profile tab to reflect changes
+  loadProfileTab();
+});
 
 // Profile skill add
 document.getElementById("profSkillAddBtn")?.addEventListener("click", () => {
