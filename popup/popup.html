@@ -290,6 +290,26 @@
   <div class="login-note">Free to use — your data stays private</div>
 </div>
 
+<!-- Disclaimer overlay (first use) -->
+<div id="disclaimerOverlay" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:1000;padding:20px;overflow-y:auto">
+  <div style="max-width:400px;margin:0 auto">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;background:var(--accent);border-radius:10px;font-weight:700;font-size:14px;color:#000;font-family:'Space Mono',monospace">AA</div>
+      <div style="font-size:18px;font-weight:700;margin-top:10px">Terms of Use</div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;font-size:11px;line-height:1.6;color:var(--muted);max-height:280px;overflow-y:auto;margin-bottom:16px">
+      <p style="margin-bottom:10px;color:var(--text);font-weight:600">By using Aburrido AI, you agree to the following:</p>
+      <p style="margin-bottom:8px"><strong style="color:#f59e0b">User Responsibility:</strong> You are solely responsible for ensuring your use of this extension complies with the terms of service of any platform you use it on, including LinkedIn and Indeed.</p>
+      <p style="margin-bottom:8px"><strong style="color:#f59e0b">Platform Risks:</strong> Automated interactions may violate platform terms of service and could result in account restrictions or bans. Use at your own risk.</p>
+      <p style="margin-bottom:8px"><strong style="color:#f59e0b">No Warranty:</strong> This extension is provided "as is" without warranties. We do not guarantee application accuracy, submission success, or platform compliance.</p>
+      <p style="margin-bottom:8px"><strong style="color:#f59e0b">No Liability:</strong> The developers shall not be liable for any damages, account actions, or consequences resulting from your use of this extension.</p>
+      <p style="margin-bottom:0"><a href="https://audi-m.github.io/Aburrido/privacy-policy.html" target="_blank" style="color:var(--accent)">Read full Privacy Policy & Terms</a></p>
+    </div>
+    <button id="acceptDisclaimer" style="width:100%;padding:10px;border-radius:8px;border:none;background:var(--accent);color:#000;font-weight:600;font-size:13px;cursor:pointer">I Understand & Accept</button>
+    <div style="text-align:center;margin-top:10px;font-size:10px;color:var(--muted)">You must accept to use this extension</div>
+  </div>
+</div>
+
 <div class="header">
   <div class="logo">AA</div>
   <div class="header-text">
@@ -361,6 +381,16 @@
 </div>
 
 <div class="section">
+  <div class="section-title">Profile</div>
+  <div id="profileStatus" style="font-size:11px;color:var(--muted);margin-bottom:8px">No profile scanned yet</div>
+  <div style="display:flex;gap:6px;margin-bottom:6px">
+    <input type="text" class="api-input" id="profileUrl" placeholder="linkedin.com/in/your-username" style="font-size:11px">
+  </div>
+  <button class="save-btn" id="scanProfileBtn" style="width:100%;padding:7px">Scan LinkedIn Profile</button>
+  <div id="scanProgress" style="font-size:10px;color:var(--muted);margin-top:5px;min-height:14px"></div>
+</div>
+
+<div class="section">
   <div class="section-title">Limits</div>
   <div class="field-row">
     <span class="field-label">Daily application limit</span>
@@ -380,16 +410,6 @@
       <div class="plat-dot"></div> <span id="sponsorshipLabel">No</span>
     </div>
   </div>
-</div>
-
-<div class="section">
-  <div class="section-title">Profile</div>
-  <div id="profileStatus" style="font-size:11px;color:var(--muted);margin-bottom:8px">No profile scanned yet</div>
-  <div style="display:flex;gap:6px;margin-bottom:6px">
-    <input type="text" class="api-input" id="profileUrl" placeholder="linkedin.com/in/your-username" style="font-size:11px">
-  </div>
-  <button class="save-btn" id="scanProfileBtn" style="width:100%;padding:7px">Scan LinkedIn Profile</button>
-  <div id="scanProgress" style="font-size:10px;color:var(--muted);margin-top:5px;min-height:14px"></div>
 </div>
 
 <div class="section" id="pendingSection" style="display:none">

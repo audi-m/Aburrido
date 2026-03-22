@@ -57,6 +57,19 @@ async function init() {
   const authed = await checkAuth();
   if (!authed) return;
 
+  // Show disclaimer on first use
+  const { disclaimerAccepted } = await chrome.storage.local.get("disclaimerAccepted");
+  if (!disclaimerAccepted) {
+    document.getElementById("disclaimerOverlay").style.display = "";
+    await new Promise(resolve => {
+      document.getElementById("acceptDisclaimer").addEventListener("click", async () => {
+        await chrome.storage.local.set({ disclaimerAccepted: true });
+        document.getElementById("disclaimerOverlay").style.display = "none";
+        resolve();
+      });
+    });
+  }
+
   // Load settings and stats
   settings = await msg("GET_SETTINGS");
   const stats = await msg("GET_STATS");

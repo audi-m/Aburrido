@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — Aburrido AI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0c0f;
+    --surface: #111318;
+    --border: #1f2430;
+    --green: #00e5a0;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    padding: 0;
+  }
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+  header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 32px;
+    margin-bottom: 40px;
+  }
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    text-decoration: none;
+  }
+  .logo-mark {
+    width: 36px; height: 36px;
+    background: var(--green);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px; color: #000;
+    font-family: 'Courier New', monospace;
+  }
+  .logo-text {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  h1 {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .effective-date {
+    color: var(--muted);
+    font-size: 14px;
+  }
+  h2 {
+    font-size: 22px;
+    font-weight: 600;
+    margin-top: 40px;
+    margin-bottom: 16px;
+    color: var(--green);
+  }
+  h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin-top: 24px;
+    margin-bottom: 8px;
+  }
+  p {
+    margin-bottom: 14px;
+    color: var(--text);
+  }
+  ul, ol {
+    margin-bottom: 14px;
+    padding-left: 24px;
+  }
+  li {
+    margin-bottom: 6px;
+  }
+  strong {
+    color: #fff;
+  }
+  a {
+    color: var(--green);
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+  .highlight-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-size: 15px;
+  }
+  footer {
+    border-top: 1px solid var(--border);
+    margin-top: 48px;
+    padding-top: 24px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">AA</div>
+    <div class="logo-text">Aburrido AI</div>
+  </div>
+  <h1>Privacy Policy</h1>
+  <p class="effective-date">Effective date: March 22, 2026</p>
+</header>
+
+<p>Aburrido AI ("we", "our", or "the extension") is a Chrome extension that helps automate job applications on LinkedIn and Indeed using artificial intelligence. We are committed to protecting your privacy and being transparent about how your data is handled.</p>
+
+<p>This policy explains what information we collect, how we use it, where it is stored, and what rights you have over your data.</p>
+
+<h2>1. Information We Collect</h2>
+
+<h3>1.1 Profile Information</h3>
+<p>When you scan your LinkedIn profile or manually enter information in the dashboard, we collect:</p>
+<ul>
+  <li>Name, email address, and phone number</li>
+  <li>Work history (job titles, companies, dates, descriptions)</li>
+  <li>Education history</li>
+  <li>Skills and competencies</li>
+  <li>City and location preferences</li>
+  <li>Job search preferences (minimum salary, visa sponsorship requirements)</li>
+</ul>
+
+<h3>1.2 Resume Data</h3>
+<p>If you upload a resume (PDF or text), we extract and store its text content to help the AI answer job application questions accurately.</p>
+
+<h3>1.3 Job Application Data</h3>
+<p>When the extension applies to jobs on your behalf, we record:</p>
+<ul>
+  <li>Job title, company name, and job URL</li>
+  <li>Application date and status</li>
+  <li>Questions asked during the application and the AI-generated answers</li>
+  <li>Platform (LinkedIn or Indeed)</li>
+</ul>
+
+<h3>1.4 API Keys</h3>
+<p>You provide an API key for your chosen AI provider (Anthropic Claude, Google Gemini, or OpenAI). This key is used to process job application questions.</p>
+
+<div class="highlight-box">
+  <strong>Important:</strong> Your API keys are stored exclusively in your browser's local storage (<code>chrome.storage.local</code>). They are never transmitted to our servers or stored in our cloud database.
+</div>
+
+<h3>1.5 Authentication Data</h3>
+<p>If you sign in with Google OAuth, we receive your Google account name, email address, and profile photo to identify your account and sync your data.</p>
+
+<h2>2. How We Use Your Information</h2>
+
+<p>We use the information we collect for the following purposes:</p>
+<ul>
+  <li><strong>Automating job applications:</strong> Your profile data, resume text, and work history are sent to your selected AI provider so it can generate accurate, personalized answers to job application questions.</li>
+  <li><strong>Job scoring:</strong> The AI evaluates job listings against your profile to determine relevance before applying.</li>
+  <li><strong>Tracking applications:</strong> We record which jobs you have applied to so you can review your history, avoid duplicates, and monitor your job search progress via the dashboard.</li>
+  <li><strong>Saving answers:</strong> Previously answered questions are stored so the AI can provide consistent responses to similar questions in future applications.</li>
+  <li><strong>Syncing across sessions:</strong> When signed in, your profile and application data sync to our cloud database so your data persists if you clear your browser or switch devices.</li>
+</ul>
+
+<h2>3. Data Storage</h2>
+
+<h3>3.1 Local Storage</h3>
+<p>All data is stored on your device in <code>chrome.storage.local</code>, including:</p>
+<ul>
+  <li>Your profile, resume text, and preferences</li>
+  <li>API keys (stored locally only, never in the cloud)</li>
+  <li>Application history and saved answers</li>
+  <li>Authentication session tokens</li>
+</ul>
+
+<h3>3.2 Cloud Storage</h3>
+<p>When you sign in with Google, your data (excluding API keys) is also stored in a <a href="https://supabase.com" target="_blank" rel="noopener">Supabase</a>-hosted PostgreSQL database to enable data persistence and cross-session sync. Data stored in the cloud includes:</p>
+<ul>
+  <li>User profile information and skills</li>
+  <li>Job application records and answers</li>
+  <li>Saved question-answer pairs</li>
+  <li>Resume metadata (file name and upload date, not the raw file)</li>
+</ul>
+
+<h2>4. Third-Party Services</h2>
+
+<p>Aburrido AI integrates with the following third-party services:</p>
+
+<h3>4.1 AI Providers</h3>
+<p>Depending on your selection, job application questions and relevant profile context are sent to one of the following providers for processing:</p>
+<ul>
+  <li><strong>Anthropic</strong> (Claude) &mdash; <a href="https://www.anthropic.com/privacy" target="_blank" rel="noopener">Privacy Policy</a></li>
+  <li><strong>Google</strong> (Gemini) &mdash; <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Privacy Policy</a></li>
+  <li><strong>OpenAI</strong> (GPT) &mdash; <a href="https://openai.com/privacy" target="_blank" rel="noopener">Privacy Policy</a></li>
+</ul>
+<p>These requests are made directly from your browser using your own API key. We do not proxy, intercept, or store the API traffic on our servers.</p>
+
+<h3>4.2 Supabase</h3>
+<p>We use <a href="https://supabase.com" target="_blank" rel="noopener">Supabase</a> as our cloud database and authentication provider. Supabase hosts data on secure, SOC 2-compliant infrastructure.</p>
+
+<h3>4.3 Google OAuth</h3>
+<p>We use Google OAuth (via Supabase Auth) for optional sign-in. We only request basic profile information (name, email, and profile photo). We do not access your Google contacts, calendar, or any other Google services.</p>
+
+<h2>5. Data Sharing</h2>
+
+<div class="highlight-box">
+  <strong>We do not sell your data.</strong> We do not share your personal information with third parties for advertising, marketing, or any purpose unrelated to the core functionality of the extension.
+</div>
+
+<p>Your data is shared only in the following limited circumstances:</p>
+<ul>
+  <li><strong>AI providers:</strong> Profile context and application questions are sent to your chosen AI provider to generate answers. These requests use your own API key and go directly from your browser.</li>
+  <li><strong>Supabase:</strong> When signed in, your data is stored in our Supabase database for persistence and sync.</li>
+  <li><strong>Legal requirements:</strong> We may disclose data if required by law or to protect our legal rights.</li>
+</ul>
+
+<h2>6. Data Security</h2>
+
+<p>We implement the following measures to protect your data:</p>
+<ul>
+  <li>API keys are stored only in your browser's local storage and are never sent to our servers or cloud database.</li>
+  <li>Authentication uses PKCE (Proof Key for Code Exchange) for secure OAuth flows.</li>
+  <li>All network communication uses HTTPS/TLS encryption.</li>
+  <li>Cloud data is stored on Supabase's secure infrastructure with row-level security policies, ensuring users can only access their own data.</li>
+  <li>Session tokens are automatically refreshed and can be revoked by signing out.</li>
+</ul>
+
+<h2>7. Your Rights</h2>
+
+<p>You have the following rights regarding your data:</p>
+<ul>
+  <li><strong>Access:</strong> You can view all your stored data at any time via the extension's dashboard.</li>
+  <li><strong>Edit:</strong> You can update your profile information, skills, and saved answers from the dashboard.</li>
+  <li><strong>Delete:</strong> You can delete individual job applications from the dashboard. You can also delete your entire profile and application history.</li>
+  <li><strong>Local data removal:</strong> You can clear all locally stored data by removing the extension from Chrome.</li>
+  <li><strong>Sign out:</strong> You can sign out at any time to disconnect from the cloud database. Local data is retained after sign-out.</li>
+  <li><strong>Revoke API access:</strong> You can remove your API key at any time from the extension popup.</li>
+</ul>
+
+<p>If you wish to request complete deletion of your cloud-stored data, please contact us at the email address below.</p>
+
+<h2>8. Data Retention</h2>
+
+<p>We retain your data for as long as your account is active. Application records and saved answers are kept indefinitely to support your ongoing job search unless you choose to delete them. If you uninstall the extension, local data is automatically removed by Chrome. Cloud data persists until you request deletion.</p>
+
+<h2>9. Children's Privacy</h2>
+
+<p>Aburrido AI is not intended for use by anyone under the age of 16. We do not knowingly collect personal information from children.</p>
+
+<h2>10. Terms of Use &amp; Disclaimer</h2>
+
+<div class="highlight-box" style="border-color: #f59e0b;">
+  <strong style="color: #f59e0b;">Important Disclaimer:</strong> By using Aburrido AI, you acknowledge and agree to the following terms.
+</div>
+
+<h3>10.1 User Responsibility</h3>
+<p><strong>You are solely responsible for your use of this extension and for ensuring that your use complies with the terms of service of any third-party platforms you interact with</strong>, including but not limited to LinkedIn, Indeed, and any other job application platforms.</p>
+
+<h3>10.2 Platform Terms of Service</h3>
+<p>Many platforms, including LinkedIn and Indeed, have terms of service that may restrict or prohibit automated interactions, scraping, or bot-assisted activity. <strong>It is your responsibility to review, understand, and comply with the terms of service of any platform on which you use this extension.</strong> We do not guarantee that the use of this extension is permitted by any third-party platform.</p>
+
+<h3>10.3 No Warranty</h3>
+<p>Aburrido AI is provided <strong>"as is" and "as available"</strong> without warranties of any kind, whether express or implied. We do not warrant that:</p>
+<ul>
+  <li>The extension will function without interruption or errors</li>
+  <li>Job applications will be submitted correctly or completely</li>
+  <li>AI-generated answers will be accurate, appropriate, or accepted by employers</li>
+  <li>Your use of the extension will not result in account restrictions or bans on any platform</li>
+</ul>
+
+<h3>10.4 Limitation of Liability</h3>
+<p>To the maximum extent permitted by applicable law, the developers and maintainers of Aburrido AI shall not be liable for any direct, indirect, incidental, special, consequential, or punitive damages arising out of or related to your use of this extension, including but not limited to:</p>
+<ul>
+  <li>Account suspension, restriction, or termination on any platform (LinkedIn, Indeed, etc.)</li>
+  <li>Incorrect or inappropriate AI-generated responses submitted on your behalf</li>
+  <li>Missed job opportunities or rejected applications</li>
+  <li>Loss of data or unauthorized access to your accounts</li>
+  <li>Any legal claims arising from automated activity on third-party platforms</li>
+</ul>
+
+<h3>10.5 Indemnification</h3>
+<p>You agree to indemnify, defend, and hold harmless the developers of Aburrido AI from any claims, damages, losses, liabilities, and expenses (including legal fees) arising from your use of the extension or your violation of any third-party terms of service.</p>
+
+<h3>10.6 Acceptance</h3>
+<p>By installing and using Aburrido AI, you acknowledge that you have read, understood, and agree to these terms. If you do not agree, you must uninstall the extension and discontinue use immediately.</p>
+
+<h2>11. Changes to This Policy</h2>
+
+<p>We may update this privacy policy from time to time. If we make material changes, we will update the effective date at the top of this page. Continued use of the extension after changes constitutes acceptance of the updated policy.</p>
+
+<h2>12. Contact</h2>
+
+<p>If you have questions about this privacy policy or want to request data deletion, please contact us:</p>
+<ul>
+  <li>Email: <a href="mailto:aburrido.ai@gmail.com">aburrido.ai@gmail.com</a></li>
+  <li>GitHub: <a href="https://github.com/audi-m/Aburrido" target="_blank" rel="noopener">github.com/audi-m/Aburrido</a></li>
+</ul>
+
+<footer>
+  <p>&copy; 2026 Aburrido AI. All rights reserved.</p>
+</footer>
+
+</div>
+</body>
+</html>
