@@ -1,23 +1,25 @@
 // background/service_worker.js
 import { getSession, signInWithGoogle, signOut } from '../lib/auth.js';
-import { getApplications, recordApplication, getSavedAnswer, saveQuestion, savePendingQuestion, getPendingQuestions, answerPendingQuestion, saveProfile, getProfile, getSavedQuestions, updateSavedAnswer, updateApplicationScore, addProfileSkill, saveMissingSkills, getMissingSkillsByAppIds, saveApplicationAnswers, getApplicationAnswers, getAllApplicationAnswers, deleteApplication, saveAIQueryLog, getAIQueryLogs } from '../lib/db.js';
+import { getApplications, recordApplication, getSavedAnswer, saveQuestion, savePendingQuestion, getPendingQuestions, answerPendingQuestion, saveProfile, getProfile, getSavedQuestions, updateSavedAnswer, updateApplicationScore, addProfileSkill, saveMissingSkills, getMissingSkillsByAppIds, saveApplicationAnswers, getApplicationAnswers, getAllApplicationAnswers, deleteApplication, saveAIQueryLog, getAIQueryLogs, getSubscriptionStatus } from '../lib/db.js';
 
 const DEFAULT_SETTINGS = {
   apiKey: "",
   aiProvider: "anthropic", // "anthropic" | "gemini" | "openai"
   apiKeys: { anthropic: "", gemini: "", openai: "" },
-  dailyLimit: 40,
+  dailyLimit: 20,
   minSalary: 100000,
   autopilot: false,
   platforms: { linkedin: true, indeed: true },
   jobTitles: ["Solutions Architect", "Software Engineer", "Cloud Architect", "Principal Engineer", "Staff Engineer", "DevOps Engineer"],
   profile: null,
+  plan: "free",          // "free" | "pro"
+  trialStartedAt: null,  // ISO date string — set on first install
 };
 
 chrome.runtime.onInstalled.addListener(async () => {
   const existing = await chrome.storage.local.get("settings");
   if (!existing.settings) {
-    await chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
+    await chrome.storage.local.set({ settings: { ...DEFAULT_SETTINGS, trialStartedAt: new Date().toISOString() } });
   }
 });
 
@@ -37,6 +39,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (merged.apiKey && !merged.apiKeys.anthropic) {
           merged.apiKeys.anthropic = merged.apiKey;
           merged.aiProvider = "anthropic";
+        }
+        // Set trial start for existing users who don't have it
+        if (!merged.trialStartedAt) {
+          merged.trialStartedAt = new Date().toISOString();
+          chrome.storage.local.get("settings").then(d => {
+            const s = d.settings || {};
+            s.trialStartedAt = merged.trialStartedAt;
+            chrome.storage.local.set({ settings: s });
+          });
         }
         // If signed in, sync profileData from DB (DB is source of truth)
         try {
@@ -80,6 +91,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
       }
 
+      case "GET_SESSION_TOKEN": {
+        const { supabase_session } = await chrome.storage.local.get("supabase_session");
+        sendResponse({ accessToken: supabase_session?.access_token || null });
+        break;
+      }
+
       case "SIGN_IN": {
         try {
           const session = await signInWithGoogle();
@@ -87,6 +104,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch (e) {
           sendResponse({ error: e.message });
         }
+        break;
+      }
+
+      case "GET_PLAN_STATUS": {
+        const { settings: planSettings } = await chrome.storage.local.get("settings");
+
+        // Local trial check
+        const trialStart = planSettings?.trialStartedAt;
+        let trialDaysLeft = 0;
+        let trialActive = false;
+        if (trialStart) {
+          const elapsed = (Date.now() - new Date(trialStart).getTime()) / (1000 * 60 * 60 * 24);
+          trialDaysLeft = Math.max(0, Math.ceil(30 - elapsed));
+          trialActive = trialDaysLeft > 0;
+        }
+
+        // DB-backed plan check (source of truth for paid users)
+        let dbPro = false;
+        const session = await getSession();
+        const planUserId = getUserId(session);
+        if (planUserId) {
+          try {
+            const sub = await getSubscriptionStatus(planUserId);
+            if (sub) {
+              const planName = (sub.subscription_plan?.plan_name || "").toLowerCase();
+              dbPro = planName === "pro" && (
+                ["active", "trialing"].includes(sub.payment_status) ||
+                (sub.current_period_end && new Date(sub.current_period_end) > new Date())
+              );
+            }
+          } catch (e) { console.warn("[Plan] DB check failed:", e.message); }
+        }
+
+        const hasProFeatures = dbPro || trialActive;
+        sendResponse({
+          plan: dbPro ? "pro" : "free",
+          trialActive,
+          trialDaysLeft,
+          hasProFeatures,
+        });
         break;
       }
 

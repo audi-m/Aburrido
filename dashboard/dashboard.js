@@ -93,6 +93,7 @@ async function initDashboard() {
   renderPlatformSplit(stats);
   renderOnboarding();
   renderTable();
+  renderPlanBadge();
 
   // Auto-refresh stats every 10s
   setInterval(async () => {
@@ -928,6 +929,37 @@ document.querySelectorAll(".ailog-filter-btn").forEach(btn => {
 });
 
 // ── Tab navigation ────────────────────────────────────────────────────────────
+// ── Plan status ──────────────────────────────────────────────────────────────
+let _planStatus = null;
+
+async function getPlanStatus() {
+  if (_planStatus) return _planStatus;
+  _planStatus = await new Promise(resolve =>
+    chrome.runtime.sendMessage({ type: "GET_PLAN_STATUS" }, r => resolve(r || { plan: "free", hasProFeatures: false, trialDaysLeft: 0, trialActive: false }))
+  );
+  return _planStatus;
+}
+
+async function renderPlanBadge() {
+  const status = await getPlanStatus();
+  const navSkills = document.getElementById("navSkills");
+  if (!navSkills) return;
+
+  // Add badge to Skills Gap nav item
+  const existing = navSkills.querySelector(".plan-badge");
+  if (existing) existing.remove();
+
+  if (status.hasProFeatures && status.trialActive) {
+    navSkills.insertAdjacentHTML("beforeend",
+      `<span class="plan-badge" style="margin-left:auto;font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;background:var(--green);color:#000">Trial: ${status.trialDaysLeft}d</span>`
+    );
+  } else if (!status.hasProFeatures) {
+    navSkills.insertAdjacentHTML("beforeend",
+      `<span class="plan-badge" style="margin-left:auto;font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;background:var(--yellow);color:#000">PRO</span>`
+    );
+  }
+}
+
 function switchTab(navId) {
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   if (navId !== "navProfile") {
@@ -945,9 +977,44 @@ function switchTab(navId) {
   document.getElementById("profilePanel").style.display = navId === "navProfile" ? "" : "none";
 
   if (navId === "navQA") loadQATab();
-  if (navId === "navSkills") loadSkillsTab();
+  if (navId === "navSkills") loadSkillsTabGated();
   if (navId === "navAILog") loadAILogTab();
   if (navId === "navProfile") loadProfileTab();
+}
+
+async function loadSkillsTabGated() {
+  const status = await getPlanStatus();
+  const panel = document.getElementById("skillsPanel");
+  if (status.hasProFeatures) {
+    loadSkillsTab();
+  } else {
+    // Get auth token for checkout
+    const { user } = await getUser();
+    const { accessToken } = await new Promise(resolve =>
+      chrome.runtime.sendMessage({ type: "GET_SESSION_TOKEN" }, r => resolve(r || {}))
+    );
+    const uid = user?.id || "";
+    const token = accessToken || "";
+    const pricingUrl = `https://audi-m.github.io/Aburrido/pricing.html?uid=${uid}&token=${token}`;
+
+    panel.innerHTML = `
+      <div style="text-align:center;padding:60px 20px">
+        <div style="font-size:48px;margin-bottom:16px">🔒</div>
+        <div style="font-size:20px;font-weight:700;margin-bottom:8px">Skills Gap Analysis</div>
+        <div style="color:var(--muted);font-size:13px;margin-bottom:24px;max-width:360px;margin-left:auto;margin-right:auto">
+          See which skills you're missing for the jobs you apply to. Identify gaps across all applications and track your growth.
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;max-width:320px;margin:0 auto">
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px">Upgrade to Pro — $12/mo</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:16px">Your 30-day free trial has ended</div>
+          <a href="${pricingUrl}" target="_blank"
+             style="display:block;padding:10px;background:var(--green);color:#000;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;text-align:center">
+            Upgrade to Pro
+          </a>
+        </div>
+      </div>
+    `;
+  }
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

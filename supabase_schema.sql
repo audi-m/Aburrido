@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS public.application_status (
 -- Seed lookups
 INSERT INTO public.subscription_plan (plan_name, max_daily_apps, max_saved_qa, price) VALUES
   ('Free',        20,   100,   0.00),
-  ('Pro',        100,  1000,   9.99),
+  ('Pro',        100,  1000,  12.00),
   ('Max', NULL,  NULL,  29.99)
 ON CONFLICT (plan_name) DO NOTHING;
 
