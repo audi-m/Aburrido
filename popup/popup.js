@@ -42,6 +42,34 @@ document.getElementById("googleSignInBtn").addEventListener("click", async () =>
   }
 });
 
+// Email/password sign in
+document.getElementById("emailSignInBtn").addEventListener("click", async () => {
+  const email = document.getElementById("loginEmail").value.trim();
+  const password = document.getElementById("loginPassword").value;
+  const errorEl = document.getElementById("emailSignInError");
+  errorEl.textContent = "";
+
+  if (!email || !password) {
+    errorEl.textContent = "Please enter email and password";
+    return;
+  }
+
+  const btn = document.getElementById("emailSignInBtn");
+  btn.disabled = true;
+  btn.textContent = "Signing in...";
+
+  const res = await msg("SIGN_IN_EMAIL", { email, password });
+  if (res?.user) {
+    document.getElementById("loginOverlay").classList.remove("visible");
+    document.getElementById("signOutBtn").style.display = "flex";
+    init();
+  } else {
+    errorEl.textContent = res?.error || "Sign in failed";
+    btn.disabled = false;
+    btn.textContent = "Sign In";
+  }
+});
+
 document.getElementById("signOutBtn").addEventListener("click", async () => {
   await msg("SIGN_OUT");
   document.getElementById("userAvatar").style.display = "none";
@@ -98,8 +126,32 @@ async function init() {
   // Stats
   document.getElementById("statToday").textContent = stats.today || 0;
   document.getElementById("statTotal").textContent = stats.total || 0;
-  const remaining = (settings.dailyLimit || 40) - (stats.today || 0);
+  const remaining = (settings.dailyLimit || 20) - (stats.today || 0);
   document.getElementById("statRemaining").textContent = Math.max(0, remaining);
+
+  // Free trial banner — hide for Pro users
+  const hasKey = settings.apiKeys?.[settings.aiProvider] || settings.apiKey;
+  const freeTrialBanner = document.getElementById("freeTrialBanner");
+  const budgetData = await msg("CHECK_BUDGET");
+  const isProUser = !budgetData?.noApiKey && !hasKey; // Pro bypasses noApiKey
+  if (freeTrialBanner) {
+    if (!hasKey && !isProUser) {
+      const freeLeft = Math.max(0, 10 - (settings.freeAppsUsed || 0));
+      freeTrialBanner.style.display = "";
+      document.getElementById("freeAppsCount").textContent = `${freeLeft}/10`;
+      // If free limit reached, force stop autopilot
+      if (freeLeft <= 0 && isRunning) {
+        isRunning = false;
+        settings.autopilot = false;
+        msg("SAVE_SETTINGS", { settings });
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0]?.id) chrome.tabs.sendMessage(tabs[0].id, { type: "STOP_AUTOPILOT" });
+        });
+      }
+    } else {
+      freeTrialBanner.style.display = "none";
+    }
+  }
 
   // Activity
   renderActivity(stats.recentApps || []);
@@ -155,7 +207,26 @@ async function detectCurrentPage() {
 }
 
 // ── Toggle autopilot ───────────────────────────────────────────────────────
+// Go Pro from popup
+document.getElementById("popupGoProBtn")?.addEventListener("click", async () => {
+  const { user } = await msg("GET_USER");
+  const { accessToken } = await msg("GET_SESSION_TOKEN");
+  const uid = user?.id || "";
+  const token = accessToken || "";
+  chrome.tabs.create({ url: `https://audi-m.github.io/Aburrido/pricing.html?uid=${uid}&token=${token}` });
+});
+
 document.getElementById("toggleBtn").addEventListener("click", async () => {
+  // Block starting if free limit exhausted and no API key
+  const hasApiKey = settings.apiKeys?.[settings.aiProvider] || settings.apiKey;
+  if (!isRunning && !hasApiKey) {
+    const freeLeft = Math.max(0, 10 - (settings.freeAppsUsed || 0));
+    if (freeLeft <= 0) {
+      updateStatus("error", "Free limit reached — add an API key");
+      return;
+    }
+  }
+
   isRunning = !isRunning;
   settings.autopilot = isRunning;
   await msg("SAVE_SETTINGS", { settings });

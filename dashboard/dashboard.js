@@ -711,7 +711,6 @@ let profileSkills = [];
 async function loadProfileTab() {
   const settings = await getSettings();
   const pd = settings.profileData || {};
-  const profile = settings.profile || {};
 
   const statusEl = document.getElementById("profileStatusBanner");
   const { user } = await getUser();
@@ -958,7 +957,24 @@ async function renderPlanBadge() {
       `<span class="plan-badge" style="margin-left:auto;font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;background:var(--yellow);color:#000">PRO</span>`
     );
   }
+
+  // Show/hide Go Pro button in sidebar
+  const goProEl = document.getElementById("goProSidebar");
+  if (goProEl) {
+    goProEl.style.display = (status.plan === "pro") ? "none" : "";
+  }
 }
+
+// Go Pro button click
+document.getElementById("goProBtn")?.addEventListener("click", async () => {
+  const { user } = await getUser();
+  const { accessToken } = await new Promise(resolve =>
+    chrome.runtime.sendMessage({ type: "GET_SESSION_TOKEN" }, r => resolve(r || {}))
+  );
+  const uid = user?.id || "";
+  const token = accessToken || "";
+  window.open(`https://audi-m.github.io/Aburrido/pricing.html?uid=${uid}&token=${token}`, "_blank");
+});
 
 function switchTab(navId) {
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
@@ -1005,7 +1021,7 @@ async function loadSkillsTabGated() {
           See which skills you're missing for the jobs you apply to. Identify gaps across all applications and track your growth.
         </div>
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;max-width:320px;margin:0 auto">
-          <div style="font-size:14px;font-weight:600;margin-bottom:4px">Upgrade to Pro — $12/mo</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px">Upgrade to Pro — $11.99/mo</div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:16px">Your 30-day free trial has ended</div>
           <a href="${pricingUrl}" target="_blank"
              style="display:block;padding:10px;background:var(--green);color:#000;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;text-align:center">

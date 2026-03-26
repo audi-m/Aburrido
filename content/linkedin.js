@@ -773,7 +773,14 @@
     for (let i = 0; i < cards.length; i++) {
       if (shouldStop) break;
       const budget = await AI.checkBudget();
-      if (budget.remaining <= 0) { AI.log(PLATFORM, "Daily limit reached", "warn"); break; }
+      if (budget.remaining <= 0) {
+        shouldStop = true;
+        isRunning = false;
+        AI.log(PLATFORM, budget.noApiKey
+          ? `Free trial limit reached (${budget.freeAppsUsed}/10). Add an API key to continue.`
+          : "Daily limit reached", "warn");
+        break;
+      }
 
       const card = cards[i];
       AI.log(PLATFORM, `Card ${i + 1}/${cards.length}`);
@@ -788,6 +795,15 @@
     }
 
     if (shouldStop) return;
+
+    // Re-check budget before going to next page
+    const budgetCheck = await AI.checkBudget();
+    if (budgetCheck.remaining <= 0) {
+      AI.log(PLATFORM, budgetCheck.noApiKey
+        ? `Free trial limit reached (${budgetCheck.freeAppsUsed}/10). Add an API key to continue.`
+        : "Daily limit reached — stopping autopilot", "warn");
+      return;
+    }
 
     // Next page — the pagination "Next" button has no aria-label, just innerText="Next".
     // Page number buttons have aria-label="Page 1", "Page 2", etc.

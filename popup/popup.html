@@ -287,6 +287,15 @@
     </svg>
     Continue with Google
   </button>
+  <div style="display:flex;align-items:center;gap:10px;margin:12px 0 10px;width:100%">
+    <div style="flex:1;height:1px;background:var(--border)"></div>
+    <span style="font-size:10px;color:var(--muted)">or sign in with email</span>
+    <div style="flex:1;height:1px;background:var(--border)"></div>
+  </div>
+  <input type="email" id="loginEmail" placeholder="Email" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;margin-bottom:6px">
+  <input type="password" id="loginPassword" placeholder="Password" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;margin-bottom:8px">
+  <button id="emailSignInBtn" style="width:100%;padding:9px;border-radius:8px;border:none;background:var(--accent);color:#000;font-weight:600;font-size:12px;cursor:pointer">Sign In</button>
+  <div id="emailSignInError" style="font-size:10px;color:#f87171;margin-top:6px;min-height:14px"></div>
   <div class="login-note">Free to use — your data stays private</div>
 </div>
 
@@ -348,6 +357,15 @@
     <div class="stat-num" id="statRemaining">–</div>
     <div class="stat-label">Remaining</div>
   </div>
+</div>
+
+<div id="freeTrialBanner" style="display:none;background:linear-gradient(135deg,#111318,#0a1a12);border:1px solid var(--accent);border-radius:10px;padding:10px 14px;margin:0 16px 10px;font-size:11px">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <span style="color:var(--muted)">Free apps: <strong id="freeAppsCount" style="color:var(--accent)">10/10</strong> remaining</span>
+    <span id="popupGoProBtn" style="color:var(--accent);cursor:pointer;font-weight:600;font-size:10px">Go Pro →</span>
+  </div>
+  <div style="color:var(--accent);font-size:10px;margin-top:4px;font-weight:500">No API key needed — just click Start Autopilot!</div>
+  <div style="color:var(--muted);font-size:10px;margin-top:2px">Add an API key or upgrade to Pro for unlimited applications</div>
 </div>
 
 <div class="section" style="padding-bottom:8px">

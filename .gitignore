@@ -20,6 +20,7 @@ Desktop.ini
 .env.*
 *.key
 credentials.json
+lib/pro_config.js
 
 # Node (if ever used)
 node_modules/

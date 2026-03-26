@@ -1,6 +1,9 @@
 // background/service_worker.js
-import { getSession, signInWithGoogle, signOut } from '../lib/auth.js';
+import { getSession, signInWithGoogle, signInWithEmail, signOut } from '../lib/auth.js';
 import { getApplications, recordApplication, getSavedAnswer, saveQuestion, savePendingQuestion, getPendingQuestions, answerPendingQuestion, saveProfile, getProfile, getSavedQuestions, updateSavedAnswer, updateApplicationScore, addProfileSkill, saveMissingSkills, getMissingSkillsByAppIds, saveApplicationAnswers, getApplicationAnswers, getAllApplicationAnswers, deleteApplication, saveAIQueryLog, getAIQueryLogs, getSubscriptionStatus } from '../lib/db.js';
+
+// Built-in API key for Pro subscribers (loaded from gitignored config)
+import { PRO_API_KEY, PRO_PROVIDER } from '../lib/pro_config.js';
 
 const DEFAULT_SETTINGS = {
   apiKey: "",
@@ -14,6 +17,7 @@ const DEFAULT_SETTINGS = {
   profile: null,
   plan: "free",          // "free" | "pro"
   trialStartedAt: null,  // ISO date string — set on first install
+  freeAppsUsed: 0,       // count of free apps used without API key (max 10)
 };
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -147,6 +151,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
       }
 
+      case "SIGN_IN_EMAIL": {
+        try {
+          const session = await signInWithEmail(msg.email, msg.password);
+          sendResponse({ ok: true, user: session.user });
+        } catch (e) {
+          sendResponse({ error: e.message });
+        }
+        break;
+      }
+
       case "SIGN_OUT": {
         await signOut();
         sendResponse({ ok: true });
@@ -195,6 +209,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       // ── Record application ──────────────────────────────────────────────────
       case "RECORD_APPLICATION": {
+        // Increment free apps counter if no API key
+        const { settings: recSettings } = await chrome.storage.local.get("settings");
+        const recActiveKey = recSettings?.apiKeys?.[recSettings?.aiProvider] || recSettings?.apiKey;
+        if (!recActiveKey) {
+          recSettings.freeAppsUsed = (recSettings.freeAppsUsed || 0) + 1;
+          await chrome.storage.local.set({ settings: recSettings });
+        }
+
         const session = await getSession();
         const userId = getUserId(session);
         let jobApplicationId = null;
@@ -290,17 +312,60 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           todayCount = (await localApps()).filter(a => new Date(a.appliedAt).toDateString() === today).length;
         }
 
-        sendResponse({ remaining: Math.max(0, limit - todayCount), todayCount });
+        // Check if Pro user (bypass free app limit)
+        const budgetKey = settings?.apiKeys?.[settings?.aiProvider] || settings?.apiKey;
+        let isPro = false;
+        if (userId) {
+          try {
+            const sub = await getSubscriptionStatus(userId);
+            isPro = sub?.subscription_plan?.plan_name === "Pro";
+          } catch { /* ignore */ }
+        }
+        const freeAppsLeft = (budgetKey || isPro) ? null : Math.max(0, 10 - (settings?.freeAppsUsed || 0));
+        const remaining = Math.max(0, limit - todayCount);
+
+        sendResponse({
+          remaining: freeAppsLeft !== null ? Math.min(remaining, freeAppsLeft) : remaining,
+          todayCount,
+          freeAppsUsed: settings?.freeAppsUsed || 0,
+          freeAppsLeft,
+          noApiKey: !budgetKey && !isPro,
+        });
         break;
       }
 
-      // ── Ask Claude (with saved Q&A cache) ──────────────────────────────────
+      // ── Ask AI (with saved Q&A cache) ───────────────────────────────────────
       case "ASK_AI": {
         const { settings } = await chrome.storage.local.get("settings");
-        const activeKey = settings?.apiKeys?.[settings?.aiProvider] || settings?.apiKey;
+        let activeKey = settings?.apiKeys?.[settings?.aiProvider] || settings?.apiKey;
+        let activeProvider = settings?.aiProvider || "anthropic";
+
         if (!activeKey) {
-          sendResponse({ answer: msg.fallback || "N/A", error: "No API key" });
-          break;
+          // Check if Pro user — use built-in API key
+          const askSession = await getSession();
+          const askUserId = getUserId(askSession);
+          let askIsPro = false;
+          if (askUserId) {
+            try {
+              const askSub = await getSubscriptionStatus(askUserId);
+              askIsPro = askSub?.subscription_plan?.plan_name === "Pro";
+            } catch { /* ignore */ }
+          }
+          if (askIsPro) {
+            // Pro user — use built-in key
+            activeKey = PRO_API_KEY;
+            activeProvider = PRO_PROVIDER;
+          } else {
+            // No API key and not Pro — check free apps limit
+            const freeUsed = settings?.freeAppsUsed || 0;
+            if (freeUsed >= 10) {
+              sendResponse({ answer: "", error: "free_limit_reached" });
+              break;
+            }
+            // Use fallback answers only (no AI call) for free apps
+            sendResponse({ answer: msg.fallback || "", noApiKey: true });
+            break;
+          }
         }
 
         // Check saved answers — local first (instant), then DB
@@ -708,10 +773,25 @@ function getUserId(session) {
 }
 
 // ── Unified AI call — routes to the active provider ──────────────────────────
-async function callAI({ prompt, maxTokens = 1024, documentBase64 = null, documentMimeType = null }) {
+async function callAI({ prompt, maxTokens = 1024, documentBase64 = null, documentMimeType = null, overrideKey = null, overrideProvider = null }) {
   const { settings } = await chrome.storage.local.get("settings");
-  const provider = settings.aiProvider || "anthropic";
-  const apiKey = settings.apiKeys?.[provider] || settings.apiKey;
+  let provider = overrideProvider || settings.aiProvider || "anthropic";
+  let apiKey = overrideKey || settings.apiKeys?.[provider] || settings.apiKey;
+
+  // Pro users without their own key — use built-in key
+  if (!apiKey) {
+    const proSession = await getSession();
+    const proUserId = getUserId(proSession);
+    if (proUserId) {
+      try {
+        const proSub = await getSubscriptionStatus(proUserId);
+        if (proSub?.subscription_plan?.plan_name === "Pro") {
+          apiKey = PRO_API_KEY;
+          provider = PRO_PROVIDER;
+        }
+      } catch { /* ignore */ }
+    }
+  }
   if (!apiKey) throw new Error("No API key configured");
 
   if (provider === "gemini") {
