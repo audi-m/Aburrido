@@ -944,19 +944,9 @@ async function renderPlanBadge() {
   const navSkills = document.getElementById("navSkills");
   if (!navSkills) return;
 
-  // Add badge to Skills Gap nav item
+  // Remove any leftover Pro badge from Skills Gap nav
   const existing = navSkills.querySelector(".plan-badge");
   if (existing) existing.remove();
-
-  if (status.hasProFeatures && status.trialActive) {
-    navSkills.insertAdjacentHTML("beforeend",
-      `<span class="plan-badge" style="margin-left:auto;font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;background:var(--green);color:#000">Trial: ${status.trialDaysLeft}d</span>`
-    );
-  } else if (!status.hasProFeatures) {
-    navSkills.insertAdjacentHTML("beforeend",
-      `<span class="plan-badge" style="margin-left:auto;font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;background:var(--yellow);color:#000">PRO</span>`
-    );
-  }
 
   // Show/hide Go Pro button in sidebar
   const goProEl = document.getElementById("goProSidebar");
@@ -993,7 +983,7 @@ function switchTab(navId) {
   document.getElementById("profilePanel").style.display = navId === "navProfile" ? "" : "none";
 
   if (navId === "navQA") loadQATab();
-  if (navId === "navSkills") loadSkillsTabGated();
+  if (navId === "navSkills") loadSkillsTab();
   if (navId === "navAILog") loadAILogTab();
   if (navId === "navProfile") loadProfileTab();
 }

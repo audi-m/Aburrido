@@ -284,10 +284,22 @@
 
   // ── Open Easy Apply ───────────────────────────────────────────────────────
   async function openEasyApply() {
-    const allVisible = [...document.querySelectorAll("button, a")].filter(isVisible);
+    // Search both main document and shadow DOM for Easy Apply button
+    const mainEls = [...document.querySelectorAll("button, a")];
+    const shadowEls = shadowQueryAll("button, a");
+    const allVisible = [...mainEls, ...shadowEls].filter(isVisible);
     const btn =
-      allVisible.find(el => /easy\s*apply/i.test(el.getAttribute("aria-label") || "")) ||
+      // Prefer the specific apply button by id or "Easy Apply to ..." aria-label
+      allVisible.find(el => el.id === "jobs-apply-button-id") ||
+      allVisible.find(el => /easy\s*apply\s*to\s/i.test(el.getAttribute("aria-label") || "")) ||
+      // Fallback: any Easy Apply, but exclude the filter button
       allVisible.find(el => {
+        const label = el.getAttribute("aria-label") || "";
+        if (/filter/i.test(label)) return false;
+        return /easy\s*apply/i.test(label);
+      }) ||
+      allVisible.find(el => {
+        if (el.id === "searchFilter_applyWithLinkedin") return false;
         const t = (el.innerText || "").trim();
         return t.length < 50 && /easy\s*apply/i.test(t);
       });
@@ -596,11 +608,15 @@
             chosen = noOpt?.value ?? chosen;
           else if (/authorized|legally|eligible|willing|relocat|remote|\bagree\b|citizen/i.test(question))
             chosen = yesOpt?.value ?? chosen;
-          else
-            chosen = yesOpt?.value ?? chosen;
+          else {
+            // Unknown yes/no — ask AI
+            const ai = await AI.answerQuestion(question, "select", options.map(o => o.text.trim()), "Yes", jobContext);
+            const m = options.find(o => o.text.trim().toLowerCase() === ai.toLowerCase());
+            chosen = m ? m.value : (yesOpt?.value ?? chosen);
+          }
         } else {
           const local = AI.localFallback(question);
-          if (!local && settings.apiKey) {
+          if (!local) {
             const ai = await AI.answerQuestion(question, "select", options.map(o => o.text.trim()), "N/A", jobContext);
             const m = options.find(o => o.text.trim().toLowerCase() === ai.toLowerCase());
             if (m) chosen = m.value;
@@ -661,10 +677,20 @@
             pick = noR;
           else if (/authorized|legally|eligible|willing|relocat|remote|\bagree\b|citizen/i.test(question))
             pick = yesR;
-          else
-            pick = yesR;
+          else {
+            // Unknown yes/no radio — ask AI
+            const radioOpts = radios.map(r => label(r));
+            const ai = await AI.answerQuestion(question, "radio", radioOpts, "Yes", jobContext);
+            pick = radios.find(r => label(r).toLowerCase() === ai.toLowerCase()) || yesR;
+          }
         }
 
+        if (!pick) {
+          // Non yes/no radio group — ask AI to pick
+          const radioOpts = radios.map(r => label(r));
+          const ai = await AI.answerQuestion(question, "radio", radioOpts, radioOpts[0] || "", jobContext);
+          pick = radios.find(r => label(r).toLowerCase() === ai.toLowerCase()) || radios[0];
+        }
         if (!pick) { trackAnswer(question, "", "radio"); continue; }
         trackAnswer(question, label(pick), "radio");
         pick.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
@@ -673,8 +699,20 @@
       // ── Checkbox ──
       } else if (el.type === "checkbox") {
         if (el.checked) continue;
-        const cbLabel = (el.labels?.[0]?.innerText || AI.getQuestionText(el) || "").toLowerCase();
+        const cbLabel = (el.labels?.[0]?.innerText || AI.getQuestionText(el) || "").trim();
         if (/newsletter|marketing|promotional|subscribe|notify me|email updates/i.test(cbLabel)) continue;
+
+        // Auto-check: agree/terms/acknowledge/certify/consent
+        let shouldCheck = /\bagree\b|terms|acknowledge|certify|consent|confirm|attest|authorize/i.test(cbLabel);
+
+        if (!shouldCheck) {
+          // Ask AI if this checkbox should be checked
+          const ai = await AI.answerQuestion(`Should I check this checkbox? "${cbLabel}"`, "checkbox", ["Yes", "No"], "Yes", jobContext);
+          shouldCheck = /^yes$/i.test(ai.trim());
+        }
+
+        if (!shouldCheck) { trackAnswer(cbLabel, "unchecked", "checkbox"); continue; }
+
         el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
         await AI.delay(300, 500);
         if (!el.checked) {
@@ -684,6 +722,7 @@
           } catch { el.checked = true; }
           el.dispatchEvent(new Event("change", { bubbles: true }));
         }
+        trackAnswer(cbLabel, "checked", "checkbox");
         await AI.delay(200, 400);
 
       // ── Textarea ──
@@ -698,7 +737,7 @@
         else
           prompt = question || `Answer this job application field for ${jobTitle}: ${el.getAttribute("placeholder") || ""}`;
         let answer = "I am very interested in this position and believe my background aligns well with this role.";
-        if (settings.apiKey) answer = await AI.answerQuestion(prompt, "text", [], answer, jobContext);
+        answer = await AI.answerQuestion(prompt, "text", [], answer, jobContext);
         trackAnswer(question, answer, "textarea");
         await AI.typeSlowly(el, answer);
         el.dispatchEvent(new Event("blur", { bubbles: true }));
@@ -723,7 +762,7 @@
           continue;
         }
         let answer = isNum ? null : AI.localFallback(question);
-        if (!answer && settings.apiKey)
+        if (!answer)
           answer = await AI.answerQuestion(question, isNum ? "number" : "text", [], isNum ? "0" : "", jobContext);
         if (!answer && !isNum) {
           if (isRequired) {
@@ -808,19 +847,11 @@
     // Next page — the pagination "Next" button has no aria-label, just innerText="Next".
     // Page number buttons have aria-label="Page 1", "Page 2", etc.
     // Strategy: find all page number buttons, then find the "Next" text button nearby.
-    const pageNumBtns = [...document.querySelectorAll("button")].filter(b =>
-      /^Page \d+$/i.test(b.getAttribute("aria-label") || "")
-    );
-    let nextPageBtn = null;
-    if (pageNumBtns.length) {
-      // "Next" button is a sibling or nearby element to the page number buttons
-      const allBtns = [...document.querySelectorAll("button")];
-      nextPageBtn = allBtns.find(b =>
-        (b.innerText || "").trim() === "Next" &&
-        !b.getAttribute("aria-label") &&
-        isVisible(b)
-      );
-    }
+    const allBtns = [...document.querySelectorAll("button")];
+    let nextPageBtn =
+      allBtns.find(b => /view next page/i.test(b.getAttribute("aria-label") || "") && isVisible(b)) ||
+      allBtns.find(b => (b.innerText || "").trim() === "Next" && isVisible(b) &&
+        allBtns.some(p => /^Page \d+$/i.test(p.getAttribute("aria-label") || "")));
 
     if (nextPageBtn && isVisible(nextPageBtn)) {
       AI.log(PLATFORM, `→ Next page (btn text="${nextPageBtn.innerText.trim()}")`);
@@ -842,7 +873,17 @@
     try {
       const settings = await AI.getSettings();
       if (!settings.autopilot) { AI.log(PLATFORM, "Autopilot is OFF — enable in popup", "warn"); return; }
-      if (!settings.apiKey) AI.log(PLATFORM, "No API key — using fallbacks only", "warn");
+      if (!settings.apiKey && !settings.apiKeys?.[settings.aiProvider]) AI.log(PLATFORM, "No personal API key — using Pro built-in or fallbacks", "info");
+
+      // Navigate to jobs page if not already there
+      if (!location.href.includes("/jobs")) {
+        AI.log(PLATFORM, "Not on jobs page — navigating…");
+        const titles = settings.jobTitles || ["Software Engineer"];
+        const searchQuery = encodeURIComponent(titles[0]);
+        window.location.href = `https://www.linkedin.com/jobs/search/?keywords=${searchQuery}&f_AL=true`;
+        return; // Script will re-inject on new page and auto-start
+      }
+
       await processJobListings(settings);
       AI.log(PLATFORM, "Autopilot done");
     } finally {
@@ -899,7 +940,8 @@
 
     const settings = await AI.getSettings();
     check("Autopilot enabled", !!settings.autopilot, settings.autopilot ? "ON" : "OFF");
-    check("API key set", !!settings.apiKey, settings.apiKey ? `${settings.apiKey.slice(0, 8)}…` : "MISSING");
+    const activeKey = settings.apiKeys?.[settings.aiProvider] || settings.apiKey;
+    check("API key set", !!activeKey, activeKey ? `${activeKey.slice(0, 8)}…` : "Pro or fallback");
     check("Profile scanned", !!settings.profile?.rawText, settings.profile?.name || "No profile");
 
     const budget = await AI.checkBudget();
@@ -969,15 +1011,14 @@
       return;
     }
 
-    // Case 2: back on jobs page — auto-resume autopilot
-    if (location.href.includes("/jobs") && sessionStorage.getItem("aburrido_resume")) {
+    // Case 2: on jobs page — auto-resume autopilot if enabled
+    if (location.href.includes("/jobs")) {
       sessionStorage.removeItem("aburrido_resume");
       await AI.delay(3000, 4000);
       const settings = await AI.getSettings();
       if (settings.autopilot && !isRunning) {
-        AI.log(PLATFORM, "Auto-resuming autopilot after apply");
-        isRunning = true;
-        try { await processJobListings(settings); } finally { isRunning = false; }
+        AI.log(PLATFORM, "Auto-starting autopilot on jobs page");
+        startAutopilot();
       }
       return;
     }

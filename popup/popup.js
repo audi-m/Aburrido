@@ -129,17 +129,16 @@ async function init() {
   const remaining = (settings.dailyLimit || 20) - (stats.today || 0);
   document.getElementById("statRemaining").textContent = Math.max(0, remaining);
 
-  // Free trial banner — hide for Pro users
+  // Free trial banner — hide for Pro users and users with API keys
   const hasKey = settings.apiKeys?.[settings.aiProvider] || settings.apiKey;
   const freeTrialBanner = document.getElementById("freeTrialBanner");
   const budgetData = await msg("CHECK_BUDGET");
-  const isProUser = !budgetData?.noApiKey && !hasKey; // Pro bypasses noApiKey
+  const showFreeBanner = budgetData?.noApiKey && budgetData?.freeAppsLeft !== null;
   if (freeTrialBanner) {
-    if (!hasKey && !isProUser) {
-      const freeLeft = Math.max(0, 10 - (settings.freeAppsUsed || 0));
+    if (showFreeBanner) {
+      const freeLeft = budgetData.freeAppsLeft;
       freeTrialBanner.style.display = "";
       document.getElementById("freeAppsCount").textContent = `${freeLeft}/10`;
-      // If free limit reached, force stop autopilot
       if (freeLeft <= 0 && isRunning) {
         isRunning = false;
         settings.autopilot = false;
@@ -217,12 +216,12 @@ document.getElementById("popupGoProBtn")?.addEventListener("click", async () => 
 });
 
 document.getElementById("toggleBtn").addEventListener("click", async () => {
-  // Block starting if free limit exhausted and no API key
+  // Block starting if free limit exhausted and no API key (unless Pro)
   const hasApiKey = settings.apiKeys?.[settings.aiProvider] || settings.apiKey;
   if (!isRunning && !hasApiKey) {
-    const freeLeft = Math.max(0, 10 - (settings.freeAppsUsed || 0));
-    if (freeLeft <= 0) {
-      updateStatus("error", "Free limit reached — add an API key");
+    const budget = await msg("CHECK_BUDGET");
+    if (budget?.noApiKey && budget?.freeAppsLeft !== null && budget.freeAppsLeft <= 0) {
+      updateStatus("error", "Free limit reached — add an API key or upgrade to Pro");
       return;
     }
   }

@@ -318,8 +318,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (userId) {
           try {
             const sub = await getSubscriptionStatus(userId);
+            console.log("[Aburrido] CHECK_BUDGET — sub:", JSON.stringify(sub));
             isPro = sub?.subscription_plan?.plan_name === "Pro";
-          } catch { /* ignore */ }
+            console.log("[Aburrido] CHECK_BUDGET — isPro:", isPro, "budgetKey:", !!budgetKey);
+          } catch (e) { console.log("[Aburrido] CHECK_BUDGET — sub error:", e.message); }
+        } else {
+          console.log("[Aburrido] CHECK_BUDGET — no userId");
         }
         const freeAppsLeft = (budgetKey || isPro) ? null : Math.max(0, 10 - (settings?.freeAppsUsed || 0));
         const remaining = Math.max(0, limit - todayCount);
